@@ -1,0 +1,6 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+inst/doc
+IMPLEMENTATION_STACK_COMPARISON.md

@@ -1,0 +1,47 @@
+Package: wordembeddings
+Type: Package
+Title: Create customized word embeddings using a grammar of model (hyper)parameters
+Version: 0.1.0
+Authors@R: person("Louis", "Teitelbaum", email = "louist@post.bgu.ac.il", role = c("cre", "aut", "cph"), comment = c(ORCID = "0009-0001-9347-0145"))
+Description: The various algorithms for training word embeddings (e.g. word2vec, 
+    GloVe, fastText, PPMI SVD) share common underlying principles, but these 
+    principles are often obscured by the choices made in particular 
+    implementations. 'wordembeddings' makes the assumptions underlying these 
+    algorithms explicit with a comprehensive grammar of model parameters and 
+    hyperparameters. The user can train embeddings using any of the traditional 
+    frameworks, or mix and match elements to fit a particular application.
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+Imports:
+    rlang,
+    stats,
+    utils,
+    Matrix,
+    SparseArray,
+    methods,
+    Rcpp,
+    quanteda
+Suggests:
+    embedplyr,
+    knitr,
+    R.utils,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    text2vec,
+    JuliaCall,
+    S4Arrays,
+    jglmm,
+    lme4,
+    mgcv,
+    stringr
+Enhances:
+    tidytext
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Config/testthat/edition: 3
+Depends: 
+    R (>= 3.5)
+VignetteBuilder: knitr
+LinkingTo: 
+    Rcpp
