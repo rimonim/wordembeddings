@@ -1,0 +1,63 @@
+---
+title: "Multilevel Word Embeddings"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{multilevel}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(wordembeddings)
+library(embedplyr)
+```
+
+## FCM
+
+```{r, eval=FALSE}
+fcm_blogs_agg_pmi <- fcm_reduce(fcm_blogs)
+```
+
+
+## Smoothing
+
+```{r, eval=FALSE}
+# fcm_blogs_pmi <- fcm_smooth(fcm_blogs_pmi)
+```
+
+## PMI
+
+```{r, eval=FALSE}
+fcm_blogs_agg_pmi <- fcm_pmi(fcm_blogs_agg_pmi, smoothing = 3/4)
+fcm_blogs_pmi <- fcm_pmi(fcm_blogs, smoothing = 3/4)
+# fcm_blogs_pmi <- fcm_pmi(fcm_blogs_pmi, positive = FALSE, shift = log2(sum(fcm_blogs_pmi)))
+```
+
+## SVD
+
+```{r, eval=FALSE}
+# svd_blogs <- svd(fcm_blogs_pmi, 0, 100)
+# blogs_wordvecs_sgt <- svd_blogs$v
+# rownames(blogs_wordvecs_sgt) <- rownames(fcm_blogs_pmi)
+```
+
+## Regression
+
+```{r, eval=FALSE}
+blogs_wordvecs_lm <- train_lm(fcm_blogs_agg_pmi, context_embeddings = blogs_wordvecs_lm$context_embeddings, dynamic = FALSE, n_dims = 25)
+saveRDS(blogs_wordvecs_lm, "~/Documents/data/embeddings/blogs_svd_lm.rds")
+```
+
+```{r, eval=FALSE}
+options(mc.cores = 3)
+blogs_wordvecs_mlm <- train_mlm(fcm_blogs_pmi[,,1:10], context_embeddings = blogs_wordvecs_lm$context_embeddings, n_dims = 25, dynamic = FALSE, control = dynamic_embeddings_control(drop_zeros = FALSE))
+saveRDS(blogs_wordvecs_mlm, "~/Documents/data/embeddings/blogs_svd_mlm.rds")
+```
+

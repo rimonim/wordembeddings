@@ -11,16 +11,16 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // fcm_cpp
-List fcm_cpp(List tokens_list, NumericVector type_widths, LogicalVector keep_types, double window_size, NumericVector weights_vec, int weights_mode, bool include_target, std::string decay_type, double decay_param, bool asymmetric, double forward_weight, double backward_weight, bool verbose);
-RcppExport SEXP _wordembeddings_fcm_cpp(SEXP tokens_listSEXP, SEXP type_widthsSEXP, SEXP keep_typesSEXP, SEXP window_sizeSEXP, SEXP weights_vecSEXP, SEXP weights_modeSEXP, SEXP include_targetSEXP, SEXP decay_typeSEXP, SEXP decay_paramSEXP, SEXP asymmetricSEXP, SEXP forward_weightSEXP, SEXP backward_weightSEXP, SEXP verboseSEXP) {
+List fcm_cpp(List tokens_list, NumericVector type_widths_r, LogicalVector keep_types_r, double window_size, NumericVector weights_vec_r, int weights_mode, bool include_target, std::string decay_type, double decay_param, bool asymmetric, double forward_weight, double backward_weight, bool verbose, int n_threads);
+RcppExport SEXP _wordembeddings_fcm_cpp(SEXP tokens_listSEXP, SEXP type_widths_rSEXP, SEXP keep_types_rSEXP, SEXP window_sizeSEXP, SEXP weights_vec_rSEXP, SEXP weights_modeSEXP, SEXP include_targetSEXP, SEXP decay_typeSEXP, SEXP decay_paramSEXP, SEXP asymmetricSEXP, SEXP forward_weightSEXP, SEXP backward_weightSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< List >::type tokens_list(tokens_listSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type type_widths(type_widthsSEXP);
-    Rcpp::traits::input_parameter< LogicalVector >::type keep_types(keep_typesSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type type_widths_r(type_widths_rSEXP);
+    Rcpp::traits::input_parameter< LogicalVector >::type keep_types_r(keep_types_rSEXP);
     Rcpp::traits::input_parameter< double >::type window_size(window_sizeSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type weights_vec(weights_vecSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type weights_vec_r(weights_vec_rSEXP);
     Rcpp::traits::input_parameter< int >::type weights_mode(weights_modeSEXP);
     Rcpp::traits::input_parameter< bool >::type include_target(include_targetSEXP);
     Rcpp::traits::input_parameter< std::string >::type decay_type(decay_typeSEXP);
@@ -29,7 +29,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type forward_weight(forward_weightSEXP);
     Rcpp::traits::input_parameter< double >::type backward_weight(backward_weightSEXP);
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(fcm_cpp(tokens_list, type_widths, keep_types, window_size, weights_vec, weights_mode, include_target, decay_type, decay_param, asymmetric, forward_weight, backward_weight, verbose));
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(fcm_cpp(tokens_list, type_widths_r, keep_types_r, window_size, weights_vec_r, weights_mode, include_target, decay_type, decay_param, asymmetric, forward_weight, backward_weight, verbose, n_threads));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -60,7 +61,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_wordembeddings_fcm_cpp", (DL_FUNC) &_wordembeddings_fcm_cpp, 13},
+    {"_wordembeddings_fcm_cpp", (DL_FUNC) &_wordembeddings_fcm_cpp, 14},
     {"_wordembeddings_sgns_train_cpp", (DL_FUNC) &_wordembeddings_sgns_train_cpp, 16},
     {NULL, NULL, 0}
 };

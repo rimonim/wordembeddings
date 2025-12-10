@@ -248,7 +248,8 @@ test_that("train_sgns reproducibility with seed", {
     n_dims = 10,
     iterations = 1,
     verbose = FALSE,
-    seed = 42
+    seed = 42,
+    threads = 1
   )
   
   result2 <- train_sgns(
@@ -256,7 +257,8 @@ test_that("train_sgns reproducibility with seed", {
     n_dims = 10,
     iterations = 1,
     verbose = FALSE,
-    seed = 42
+    seed = 42,
+    threads = 1
   )
   
   # Same seed should produce identical embeddings
@@ -295,7 +297,8 @@ test_that("train_sgns works with different FCM input formats", {
     n_dims = 10,
     iterations = 1,
     verbose = FALSE,
-    seed = 123
+    seed = 123,
+    threads = 1
   )
   
   # Convert to sparse matrix
@@ -305,7 +308,8 @@ test_that("train_sgns works with different FCM input formats", {
     n_dims = 10,
     iterations = 1,
     verbose = FALSE,
-    seed = 123
+    seed = 123,
+    threads = 1
   )
   
   # Convert to dense matrix
@@ -315,7 +319,8 @@ test_that("train_sgns works with different FCM input formats", {
     n_dims = 10,
     iterations = 1,
     verbose = FALSE,
-    seed = 123
+    seed = 123,
+    threads = 1
   )
   
   # Quanteda and sparse should produce identical results (both are sparse internally)
@@ -441,4 +446,70 @@ test_that("train_sgns input validation for new parameters", {
     train_sgns(fcm_mat, subsample = -1e-3, iterations = 1, verbose = FALSE),
     "`subsample` must be a non-negative number"
   )
+})
+
+
+test_that("train_sgns runs with multiple threads", {
+  skip_on_cran()
+  
+  # Create a simple FCM
+  toks <- quanteda::tokens(
+    c("the quick brown fox", "the lazy dog", "quick fox"),
+    remove_punct = TRUE
+  )
+  fcm_mat <- quanteda::fcm(toks, context = "window", window = 2)
+  
+  # Train with 2 threads
+  set.seed(42)
+  emb_parallel <- train_sgns(
+    fcm_mat,
+    n_dims = 10,
+    neg = 2,
+    iterations = 2,
+    threads = 2,
+    verbose = FALSE
+  )
+  
+  expect_s3_class(emb_parallel, "dynamic_embeddings")
+  expect_equal(dim(emb_parallel$word_embeddings), c(6, 10))
+  
+  # Train with 1 thread
+  set.seed(42)
+  emb_single <- train_sgns(
+    fcm_mat,
+    n_dims = 10,
+    neg = 2,
+    iterations = 2,
+    threads = 1,
+    verbose = FALSE
+  )
+  
+  expect_s3_class(emb_single, "dynamic_embeddings")
+  
+  # Results won't be identical due to race conditions and RNG differences in parallel
+  # But dimensions should match
+  expect_equal(dim(emb_parallel$word_embeddings), dim(emb_single$word_embeddings))
+})
+
+test_that("train_sgns respects batch_size", {
+  skip_on_cran()
+  
+  toks <- quanteda::tokens(
+    c("the quick brown fox", "the lazy dog", "quick fox"),
+    remove_punct = TRUE
+  )
+  fcm_mat <- quanteda::fcm(toks, context = "window", window = 2)
+  
+  # Train with batch_size = 2
+  emb <- train_sgns(
+    fcm_mat,
+    n_dims = 10,
+    neg = 2,
+    iterations = 2,
+    batch_size = 2,
+    threads = 1,
+    verbose = FALSE
+  )
+  
+  expect_s3_class(emb, "dynamic_embeddings")
 })

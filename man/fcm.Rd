@@ -11,12 +11,13 @@ fcm(
   weights_args = list(),
   distance_metric = c("words", "characters", "surprisal"),
   direction = "symmetric",
-  tri = TRUE,
+  tri = FALSE,
   vocab_size = NULL,
   vocab_coverage = NULL,
   vocab_keep = NULL,
   include_target = FALSE,
-  verbose = FALSE
+  verbose = FALSE,
+  threads = NULL
 )
 }
 \arguments{
@@ -28,7 +29,7 @@ fcm(
 
 \item{weights_args}{List of arguments for the decay function (e.g. \code{alpha} for power/exp).}
 
-\item{distance_metric}{Metric to input to decay function: "words", "characters", "surprisal". "words" uses token distance; "characters" weights words by their length in characters; "surprisal" weights words by -log(probability) based on unigram frequencies.}
+\item{distance_metric}{Metric to input to decay function: "words", "characters", "surprisal". "words" uses token distance; "characters" weights words by their length in characters; "surprisal" weights words by -log(probability) based on unigram frequencies. Metrics are rescaled such that the average width of a word is fixed at 1 (i.e. \code{window = 5} will result in an average window size of 5 words).}
 
 \item{direction}{String ("symmetric", "forward", "backward") or numeric ratio of forward to backward weight.}
 
@@ -43,6 +44,8 @@ fcm(
 \item{include_target}{Logical. If TRUE, the target word is included in the context (distance 0).}
 
 \item{verbose}{Logical.}
+
+\item{threads}{Integer. Number of threads to use for parallel processing. If NULL (default), uses all available cores.}
 }
 \description{
 Create a Feature Co-occurrence Matrix

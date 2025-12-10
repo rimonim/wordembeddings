@@ -7,7 +7,15 @@
 \alias{fcm_log}
 \title{Transform a feature co-occurrence matrix}
 \usage{
-fcm_pmi(fcm, positive = TRUE, smoothing = 1, shift = 0, base = 2, prob = NULL)
+fcm_pmi(
+  fcm,
+  positive = TRUE,
+  context_smoothing = 1,
+  target_smoothing = 1,
+  shift = 0,
+  base = 2,
+  prob = NULL
+)
 
 fcm_smooth(fcm, method = "goodturing", crit = 1.96, estimate_zeros = TRUE)
 
@@ -20,7 +28,11 @@ fcm_log(fcm, positive = TRUE, base = 2)
 
 \item{positive}{logical. If \code{TRUE}, all negative elements are replaced with zeros.}
 
-\item{smoothing}{the smoothing parameter for estimating the context (i.e. fcm columns) distribution.}
+\item{context_smoothing}{numeric. Power to raise context (column) frequencies. Default is 1.
+Mikolov et al. (2013) found 0.75 to work well for word2vec.}
+
+\item{target_smoothing}{numeric. Power to raise target word (row) frequencies. Default is 1.
+Set to 0 for uniform target weighting.}
 
 \item{shift}{numeric. A number added to each element of the output (see details).}
 
@@ -43,23 +55,30 @@ Sampson (1995)}
 0.05 significance criterion.}
 
 \item{estimate_zeros}{logical; if \code{TRUE}, distribute the estimated
-probability of unobserved tokens among features with a count of zero in
-each document when \code{method = "goodturing"}. Note that this coerces the
-output to a dense matrix, so may exceed memory requirements for large FCMs.}
+probability of unobserved tokens among features with a count of zero.
+Note that this coerces the output to a dense matrix, so may exceed memory
+requirements for large FCMs.}
 }
 \description{
 \code{fcm_pmi()} calculates the Pointwise Mutual Information between each word and
 context (i.e. row and column) of the matrix. \code{fcm_log()} takes the logarithm
 of each element. \code{fcm_smooth()} re-weights observed co-occurrence frequencies
-to account for unobserved values.
+to account for unobserved values. \code{fcm_positive()} sets all negative values to
+zero.
 }
 \details{
 If \code{fcm} is a 3D array or SparseArray, it is taken as a stack of feature
 co-occurrence matrices. In other words, PMI is calculated for rows and
 columns within each level of the third dimension.
-When calculating PMI, context counts are raised to the power of \code{smoothing}.
-Mikolov et al. (2013) found \code{smoothing = .75} to work well in the context of
-the word2vec algorithm.
+
+\strong{Smoothing Parameters:}
+Both \code{context_smoothing} and \code{target_smoothing} control how frequencies are
+weighted when computing PMI. Context counts (columns) are raised to the power
+of \code{context_smoothing}, and target word counts (rows) are raised to the power
+of \code{target_smoothing}. Mikolov et al. (2013) found \code{context_smoothing = 0.75}
+to work well for word2vec. Setting either parameter to 0 results in uniform
+weighting for that dimension.
+
 The shift parameter controls the prior probability of observing a true
 co-occurence as opposed to a randomly sampled ("negative") one.
 Thus \code{shift = -log(k, base)} is analogous to the Skip-gram algorithm with k

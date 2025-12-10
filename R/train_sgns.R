@@ -15,8 +15,10 @@
 #'  linearly across iterations.
 #' @param iterations integer. Number of passes through the FCM. Default is 5.
 #'  More iterations improve quality but increase computation time.
-#' @param batch_size integer. Number of context pairs processed before updating
-#'  embeddings. Default is 1 (standard SGD). Larger values implement minibatch SGD.
+#' @param batch_size integer. Controls the grain size for parallel processing.
+#'  Default is 1, which allows the parallel backend to automatically determine
+#'  the chunk size. Larger values (e.g. 10000) specify the exact number of
+#'  pairs processed per thread task, which can tune performance.
 #' @param context_smoothing numeric. Power to raise context (column) frequencies when constructing
 #'  the negative sampling table. Default is 0.75 (Mikolov et al., 2013). Set to 0 for
 #'  uniform sampling. 
@@ -47,6 +49,8 @@
 #'  }
 #' @param seed integer. Random seed for reproducibility.
 #' @param verbose logical. If `TRUE`, print progress information during training.
+#' @param threads integer. Number of threads to use for training. Default is 
+#'  `RcppParallel::defaultNumThreads()`.
 #'
 #' @details
 #' The SGNS algorithm works by:
@@ -144,7 +148,8 @@ train_sgns <- function(
   bootstrap_positive = FALSE,
   output = "word_embeddings",
   seed = NULL,
-  verbose = TRUE
+  verbose = TRUE,
+  threads = RcppParallel::defaultNumThreads()
 ) {
   # Input validation
   stopifnot(
@@ -165,7 +170,8 @@ train_sgns <- function(
     "`bootstrap_positive` must be logical" = is.logical(bootstrap_positive),
     "`output` must be 'word_embeddings', 'context_embeddings', or 'all'" =
       output %in% c("word_embeddings", "context_embeddings", "all"),
-    "`verbose` must be logical" = is.logical(verbose)
+    "`verbose` must be logical" = is.logical(verbose),
+    "`threads` must be a positive integer" = is.numeric(threads) && threads > 0
   )
 
   if (!is.null(seed)) {
@@ -176,13 +182,14 @@ train_sgns <- function(
   neg <- as.integer(neg)
   iterations <- as.integer(iterations)
   batch_size <- as.integer(batch_size)
+  threads <- as.integer(threads)
 
   # Handle 3D arrays
   if (length(dim(fcm)) == 3) {
     return(.train_sgns_3d(
       fcm, n_dims, neg, lr, iterations, batch_size,
       context_smoothing, target_smoothing, subsample, reject_positives, init, bootstrap_positive, 
-      output, verbose, seed
+      output, verbose, seed, threads
     ))
   }
 
@@ -223,6 +230,11 @@ train_sgns <- function(
     # Keep probability: min(1, sqrt(t/f) + t/f)
     keep_prob <- pmin(1, sqrt(subsample / pair_freq) + subsample / pair_freq)
     x_values <- x_values * keep_prob
+  }
+
+  # Set number of threads for RcppParallel
+  if (threads > 0) {
+    RcppParallel::setThreadOptions(numThreads = threads)
   }
 
   # Call C++ implementation
@@ -288,7 +300,8 @@ train_sgns <- function(
     subsample = subsample,
     reject_positives = reject_positives,
     init = init,
-    bootstrap_positive = bootstrap_positive
+    bootstrap_positive = bootstrap_positive,
+    threads = threads
   )
 
   result
@@ -298,7 +311,7 @@ train_sgns <- function(
 #' Handle 3D FCM arrays
 .train_sgns_3d <- function(fcm, n_dims, neg, lr, iterations, batch_size,
                             context_smoothing, target_smoothing, subsample, reject_positives, init, 
-                            bootstrap_positive, output, verbose, seed) {
+                            bootstrap_positive, output, verbose, seed, threads) {
   fcm_ids <- dimnames(fcm)[[3]]
   fcm_list <- lapply(seq_len(dim(fcm)[3]), function(i) {
     train_sgns(
@@ -316,7 +329,8 @@ train_sgns <- function(
       bootstrap_positive = bootstrap_positive,
       output = output,
       verbose = verbose,
-      seed = seed
+      seed = seed,
+      threads = threads
     )
   })
 

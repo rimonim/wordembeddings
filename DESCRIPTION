@@ -21,7 +21,9 @@ Imports:
     SparseArray,
     methods,
     Rcpp,
-    quanteda
+    quanteda,
+    RcppParallel,
+    RSpectra
 Suggests:
     embedplyr,
     knitr,
@@ -44,4 +46,5 @@ Depends:
     R (>= 3.5)
 VignetteBuilder: knitr
 LinkingTo: 
-    Rcpp
+    Rcpp,
+    RcppParallel

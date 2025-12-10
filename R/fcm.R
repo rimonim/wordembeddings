@@ -12,6 +12,7 @@
 #' @param vocab_keep Optional character vector of types to keep.
 #' @param include_target Logical. If TRUE, the target word is included in the context (distance 0).
 #' @param verbose Logical.
+#' @param threads Integer. Number of threads to use for parallel processing. If NULL (default), uses all available cores.
 #' @export
 fcm <- function(x, 
                 window = 5L,
@@ -24,11 +25,26 @@ fcm <- function(x,
                 vocab_coverage = NULL,
                 vocab_keep = NULL,
                 include_target = FALSE,
-                verbose = FALSE) {
+                verbose = FALSE,
+                threads = NULL) {
     
     distance_metric <- match.arg(distance_metric)
     
     if (!inherits(x, "tokens")) stop("x must be a quanteda tokens object")
+    
+    # Handle threads
+    n_threads <- -1L
+    if (!is.null(threads)) {
+        n_threads <- as.integer(threads)
+        if (n_threads < 1) stop("threads must be a positive integer")
+    }
+    
+    if (verbose) {
+        cat("Constructing FCM...\n")
+        cat(sprintf("  Window size: %d\n", window))
+        cat(sprintf("  Weighting: %s\n", if(is.character(weights)) weights else "custom"))
+        cat(sprintf("  Threads: %s\n", if(n_threads > 0) n_threads else "auto"))
+    }
     
     # Handle weights
     weights_vec <- numeric(0)
@@ -108,10 +124,10 @@ fcm <- function(x,
              
              if (!is.null(vocab_coverage)) {
                  total_tokens <- sum(freqs)
-                 cum_freq <- cumsum(freqs)
-                 cutoff_idx <- which(cum_freq / total_tokens >= vocab_coverage)[1]
+                 cum_freq <- cumsum(freqs) / total_tokens
+                 cutoff_idx <- which(cum_freq >= vocab_coverage)[1]
                  if (is.na(cutoff_idx)) cutoff_idx <- length(freqs)
-                 coverage_types <- head(freqs, cutoff_idx)
+                 coverage_types <- head(names(freqs), cutoff_idx)
                  keep_types <- keep_types & (types %in% coverage_types)
              }
         }
@@ -151,7 +167,7 @@ fcm <- function(x,
     result <- fcm_cpp(tokens_list, type_widths, keep_types, window, weights_vec, weights_mode, include_target,
                       decay_type, decay_param, 
                       ordered, 
-                      forward_weight, backward_weight, verbose)
+                      forward_weight, backward_weight, verbose, n_threads)
     
     # 4. Construct Matrix
     mat <- Matrix::sparseMatrix(i = result$i, j = result$j, x = result$x, 
