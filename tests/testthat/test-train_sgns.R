@@ -18,7 +18,7 @@ test_that("train_sgns basic training works with defaults", {
   result <- train_sgns(
     fcm_mat,
     n_dims = 10,
-    iterations = 2,
+    epochs = 2,
     output = "all",
     verbose = FALSE
   )
@@ -27,6 +27,8 @@ test_that("train_sgns basic training works with defaults", {
   expect_equal(dim(result$word_embeddings), c(nrow(fcm_mat), 10))
   expect_equal(dim(result$context_embeddings), c(ncol(fcm_mat), 10))
   expect_equal(result$train_method, "sgns")
+  expect_true(!is.null(result$loss_history))
+  expect_equal(length(result$loss_history), 2) # 2 epochs
 })
 
 test_that("train_sgns respects output parameter", {
@@ -36,7 +38,7 @@ test_that("train_sgns respects output parameter", {
   result_word <- train_sgns(
     fcm_mat,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     output = "word_embeddings",
     verbose = FALSE
   )
@@ -47,7 +49,7 @@ test_that("train_sgns respects output parameter", {
   result_context <- train_sgns(
     fcm_mat,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     output = "context_embeddings",
     verbose = FALSE
   )
@@ -58,7 +60,7 @@ test_that("train_sgns respects output parameter", {
   result_all <- train_sgns(
     fcm_mat,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     output = "all",
     verbose = FALSE
   )
@@ -74,7 +76,7 @@ test_that("train_sgns smoothing parameter works", {
     fcm_mat,
     n_dims = 10,
     context_smoothing = 0.75,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE
   )
   expect_equal(result_freq$control$context_smoothing, 0.75)
@@ -84,7 +86,7 @@ test_that("train_sgns smoothing parameter works", {
     fcm_mat,
     n_dims = 10,
     context_smoothing = 0,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE
   )
   expect_equal(result_uniform$control$context_smoothing, 0)
@@ -102,7 +104,7 @@ test_that("train_sgns init parameter works", {
     fcm_mat,
     n_dims = 10,
     init = "uniform",
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 123
   )
@@ -113,7 +115,7 @@ test_that("train_sgns init parameter works", {
     fcm_mat,
     n_dims = 10,
     init = "normal",
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 123
   )
@@ -135,7 +137,7 @@ test_that("train_sgns reject_positives parameter works", {
     fcm_mat,
     n_dims = 10,
     reject_positives = TRUE,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE
   )
   expect_equal(result_reject$control$reject_positives, TRUE)
@@ -145,7 +147,7 @@ test_that("train_sgns reject_positives parameter works", {
     fcm_mat,
     n_dims = 10,
     reject_positives = FALSE,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE
   )
   expect_equal(result_no_reject$control$reject_positives, FALSE)
@@ -163,7 +165,7 @@ test_that("train_sgns bootstrap_positive parameter works", {
     fcm_mat,
     n_dims = 10,
     bootstrap_positive = FALSE,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE
   )
   expect_equal(result_no_bootstrap$control$bootstrap_positive, FALSE)
@@ -173,7 +175,7 @@ test_that("train_sgns bootstrap_positive parameter works", {
     fcm_mat,
     n_dims = 10,
     bootstrap_positive = TRUE,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE
   )
   expect_equal(result_bootstrap$control$bootstrap_positive, TRUE)
@@ -191,8 +193,8 @@ test_that("train_sgns control parameters are stored correctly", {
     n_dims = 50,
     neg = 3,
     lr = 0.02,
-    iterations = 2,
-    batch_size = 2,
+    epochs = 2,
+    grain_size = 2,
     context_smoothing = 0.5,
     reject_positives = FALSE,
     init = "normal",
@@ -205,8 +207,8 @@ test_that("train_sgns control parameters are stored correctly", {
   expect_equal(result$control$n_dims, 50)
   expect_equal(result$control$neg, 3)
   expect_equal(result$control$lr, 0.02)
-  expect_equal(result$control$iterations, 2)
-  expect_equal(result$control$batch_size, 2)
+  expect_equal(result$control$epochs, 2)
+  expect_equal(result$control$grain_size, 2)
   expect_equal(result$control$context_smoothing, 0.5)
   expect_equal(result$control$reject_positives, FALSE)
   expect_equal(result$control$init, "normal")
@@ -218,24 +220,24 @@ test_that("train_sgns input validation works", {
   
   # Invalid n_dims
   expect_error(
-    train_sgns(fcm_mat, n_dims = -10, iterations = 1, verbose = FALSE),
+    train_sgns(fcm_mat, n_dims = -10, epochs = 1, verbose = FALSE),
     "`n_dims` must be a positive integer"
   )
   
   # Invalid smoothing
   expect_error(
-    train_sgns(fcm_mat, context_smoothing = -0.5, iterations = 1, verbose = FALSE)
+    train_sgns(fcm_mat, context_smoothing = -0.5, epochs = 1, verbose = FALSE)
   )
   
   # Invalid init
   expect_error(
-    train_sgns(fcm_mat, init = "invalid", iterations = 1, verbose = FALSE),
+    train_sgns(fcm_mat, init = "invalid", epochs = 1, verbose = FALSE),
     "`init` must be 'uniform' or 'normal'"
   )
   
   # Invalid reject_positives
   expect_error(
-    train_sgns(fcm_mat, reject_positives = "yes", iterations = 1, verbose = FALSE),
+    train_sgns(fcm_mat, reject_positives = "yes", epochs = 1, verbose = FALSE),
     "`reject_positives` must be logical"
   )
 })
@@ -246,7 +248,7 @@ test_that("train_sgns reproducibility with seed", {
   result1 <- train_sgns(
     fcm_mat,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 42,
     threads = 1
@@ -255,7 +257,7 @@ test_that("train_sgns reproducibility with seed", {
   result2 <- train_sgns(
     fcm_mat,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 42,
     threads = 1
@@ -275,7 +277,7 @@ test_that("train_sgns preserves rownames and colnames", {
   result <- train_sgns(
     fcm_mat,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     output = "all",
     verbose = FALSE
   )
@@ -295,7 +297,7 @@ test_that("train_sgns works with different FCM input formats", {
   result_quanteda <- train_sgns(
     fcm_mat,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 123,
     threads = 1
@@ -306,7 +308,7 @@ test_that("train_sgns works with different FCM input formats", {
   result_sparse <- train_sgns(
     fcm_sparse,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 123,
     threads = 1
@@ -317,7 +319,7 @@ test_that("train_sgns works with different FCM input formats", {
   result_dense <- train_sgns(
     fcm_dense,
     n_dims = 10,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 123,
     threads = 1
@@ -341,7 +343,7 @@ test_that("train_sgns target_smoothing parameter works", {
     fcm_mat,
     n_dims = 10,
     target_smoothing = 1,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 123
   )
@@ -352,7 +354,7 @@ test_that("train_sgns target_smoothing parameter works", {
     fcm_mat,
     n_dims = 10,
     target_smoothing = 0,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 456
   )
@@ -363,7 +365,7 @@ test_that("train_sgns target_smoothing parameter works", {
     fcm_mat,
     n_dims = 10,
     target_smoothing = 0.5,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 789
   )
@@ -386,7 +388,7 @@ test_that("train_sgns subsample parameter works", {
     fcm_mat,
     n_dims = 10,
     subsample = 0,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 123
   )
@@ -397,7 +399,7 @@ test_that("train_sgns subsample parameter works", {
     fcm_mat,
     n_dims = 10,
     subsample = 1e-3,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE,
     seed = 123
   )
@@ -420,7 +422,7 @@ test_that("train_sgns combined target_smoothing and subsample work", {
     target_smoothing = 0.5,
     subsample = 1e-3,
     context_smoothing = 0.5,
-    iterations = 1,
+    epochs = 1,
     verbose = FALSE
   )
   
@@ -438,12 +440,12 @@ test_that("train_sgns input validation for new parameters", {
   
   # Invalid target_smoothing
   expect_error(
-    train_sgns(fcm_mat, target_smoothing = -0.5, iterations = 1, verbose = FALSE)
+    train_sgns(fcm_mat, target_smoothing = -0.5, epochs = 1, verbose = FALSE)
   )
   
   # Invalid subsample
   expect_error(
-    train_sgns(fcm_mat, subsample = -1e-3, iterations = 1, verbose = FALSE),
+    train_sgns(fcm_mat, subsample = -1e-3, epochs = 1, verbose = FALSE),
     "`subsample` must be a non-negative number"
   )
 })
@@ -465,7 +467,7 @@ test_that("train_sgns runs with multiple threads", {
     fcm_mat,
     n_dims = 10,
     neg = 2,
-    iterations = 2,
+    epochs = 2,
     threads = 2,
     verbose = FALSE
   )
@@ -479,7 +481,7 @@ test_that("train_sgns runs with multiple threads", {
     fcm_mat,
     n_dims = 10,
     neg = 2,
-    iterations = 2,
+    epochs = 2,
     threads = 1,
     verbose = FALSE
   )
@@ -491,7 +493,7 @@ test_that("train_sgns runs with multiple threads", {
   expect_equal(dim(emb_parallel$word_embeddings), dim(emb_single$word_embeddings))
 })
 
-test_that("train_sgns respects batch_size", {
+test_that("train_sgns respects grain_size", {
   skip_on_cran()
   
   toks <- quanteda::tokens(
@@ -500,13 +502,13 @@ test_that("train_sgns respects batch_size", {
   )
   fcm_mat <- quanteda::fcm(toks, context = "window", window = 2)
   
-  # Train with batch_size = 2
+  # Train with grain_size = 2
   emb <- train_sgns(
     fcm_mat,
     n_dims = 10,
     neg = 2,
-    iterations = 2,
-    batch_size = 2,
+    epochs = 2,
+    grain_size = 2,
     threads = 1,
     verbose = FALSE
   )

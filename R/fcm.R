@@ -1,34 +1,60 @@
 #' Create a Feature Co-occurrence Matrix
 #'
 #' @param x A quanteda `tokens` object.
+#' @param context Either a [context_spec] object or parameters passed to create one.
+#'   If provided as a `context_spec`, other context-related parameters are ignored.
 #' @param window Size of the context window (in words) on either side of the target word.
-#' @param weights Either a string specifying a decay function of distance ("linear", "harmonic", "exponential", "power", or "none") or a numeric vector of weights. If a vector, its length must be equal to `window` (if `include_target = FALSE`) or `window + 1` (if `include_target = TRUE`) for one-sided context, or `2 * window` / `2 * window + 1` for two-sided context.
+#'   Ignored if `context` is a `context_spec` object.
+#' @param weights Either a string specifying a decay function of distance ("linear", 
+#'   "harmonic", "exponential", "power", or "none") or a numeric vector of weights. 
+#'   Ignored if `context` is a `context_spec` object.
 #' @param weights_args List of arguments for the decay function (e.g. `alpha` for power/exp).
-#' @param distance_metric Metric to input to decay function: "words", "characters", "surprisal". "words" uses token distance; "characters" weights words by their length in characters; "surprisal" weights words by -log(probability) based on unigram frequencies. Metrics are rescaled such that the average width of a word is fixed at 1 (i.e. `window = 5` will result in an average window size of 5 words).
-#' @param direction String ("symmetric", "forward", "backward") or numeric ratio of forward to backward weight.
+#'   Ignored if `context` is a `context_spec` object.
+#' @param distance_metric Metric to input to decay function: "words", "characters", 
+#'   "surprisal". Ignored if `context` is a `context_spec` object.
+#' @param direction String ("symmetric", "forward", "backward") or numeric ratio of 
+#'   forward to backward weight. Ignored if `context` is a `context_spec` object.
+#' @param include_target Logical. If TRUE, the target word is included in the context 
+#'   (distance 0). Ignored if `context` is a `context_spec` object.
 #' @param tri Logical. If TRUE, return only the upper triangle (if symmetric).
 #' @param vocab_size Optional. Limit vocabulary to top N most frequent types.
 #' @param vocab_coverage Optional. Limit vocabulary to cover this proportion of tokens.
 #' @param vocab_keep Optional character vector of types to keep.
-#' @param include_target Logical. If TRUE, the target word is included in the context (distance 0).
 #' @param verbose Logical.
 #' @param threads Integer. Number of threads to use for parallel processing. If NULL (default), uses all available cores.
 #' @export
 fcm <- function(x, 
+                context = NULL,
                 window = 5L,
                 weights = "linear",
                 weights_args = list(),
                 distance_metric = c("words", "characters", "surprisal"),
                 direction = "symmetric",
+                include_target = FALSE,
                 tri = FALSE,
                 vocab_size = NULL,
                 vocab_coverage = NULL,
                 vocab_keep = NULL,
-                include_target = FALSE,
                 verbose = FALSE,
                 threads = NULL) {
     
-    distance_metric <- match.arg(distance_metric)
+    # Handle context_spec object
+    if (inherits(context, "context_spec")) {
+      window <- context$window
+      weights <- context$weights
+      weights_args <- context$weights_args
+      distance_metric <- context$distance_metric
+      direction <- context$direction
+      include_target <- context$include_target
+    } else if (!is.null(context)) {
+      stop("context must be a context_spec object or NULL")
+    }
+    
+    if (!is.character(distance_metric)) {
+      # Already set from context_spec
+    } else {
+      distance_metric <- match.arg(distance_metric)
+    }
     
     if (!inherits(x, "tokens")) stop("x must be a quanteda tokens object")
     

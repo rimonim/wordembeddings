@@ -1,145 +1,112 @@
 #' Train embeddings with Skip-Gram with Negative Sampling
 #'
-#' `train_sgns(fcm)` trains word and context embeddings using the Skip-Gram with
-#' Negative Sampling (SGNS) algorithm (Mikolov et al., 2013). This is a
-#' computationally efficient alternative to full softmax that approximates the
-#' skip-gram model by learning from binary classification tasks between
-#' observed co-occurrences (positive samples) and randomly sampled words (negative samples).
+#' Generic function for training word embeddings using the Skip-Gram with Negative 
+#' Sampling (SGNS) algorithm (Mikolov et al., 2013). Supports both streaming from 
+#' tokens (fast, like word2vec) and training from pre-computed FCMs (consistent 
+#' with other methods in this package).
 #'
-#' @param fcm a [Quanteda fcm][quanteda::fcm] or similar 2D matrix-like or 3D
-#'	array-like object
-#' @param n_dims integer. Dimensionality of embeddings.
-#' @param neg integer. Number of negative samples per positive example. Default is 5.
-#'  Values of 5-20 are typical for small datasets, 2-5 for large datasets.
-#' @param lr numeric. Initial learning rate. Default is 0.05. Learning rate decays
-#'  linearly across iterations.
-#' @param iterations integer. Number of passes through the FCM. Default is 5.
-#'  More iterations improve quality but increase computation time.
-#' @param batch_size integer. Controls the grain size for parallel processing.
-#'  Default is 1, which allows the parallel backend to automatically determine
-#'  the chunk size. Larger values (e.g. 10000) specify the exact number of
-#'  pairs processed per thread task, which can tune performance.
-#' @param context_smoothing numeric. Power to raise context (column) frequencies when constructing
-#'  the negative sampling table. Default is 0.75 (Mikolov et al., 2013). Set to 0 for
-#'  uniform sampling. 
-#' @param target_smoothing numeric. Power to raise target word (row) frequencies when
-#'  reweighting the FCM for training. Default is 1 (no reweighting). Set to 0 for
-#'  uniform target sampling (all words trained equally regardless of frequency).
-#'  Values < 1 downsample frequent words; values > 1 oversample frequent words.
-#' @param subsample numeric. Subsampling threshold for downweighting frequent pairs,
-#'  following Mikolov et al. (2013). Default is 0 (no subsampling). Typical values
-#'  are 1e-3 to 1e-5. Each pair is kept with probability
-#'  `min(1, sqrt(subsample / freq) + subsample / freq)`.
-#' @param reject_positives logical. If `TRUE` (default), rejection sampling prevents
-#'  selecting the positive context as a negative sample. If `FALSE`, positive and
-#'  negative samples are drawn independently.
-#' @param init character. Initialization distribution for embeddings:
-#'  \describe{
-#'    \item{`"uniform"`}{(default) Uniform distribution $U(-0.5/n_dims, 0.5/n_dims)$}
-#'    \item{`"normal"`}{Standard normal distribution $N(0, 1)$}
-#'  }
-#' @param bootstrap_positive logical. If `TRUE`, positive samples are also drawn
-#'  stochastically (with replacement). If `FALSE` (default), every observed
-#'  co-occurrence is treated as exactly one positive example.
-#' @param output character. What to return:
-#'  \describe{
-#'    \item{`"word_embeddings"`}{(default) only word embeddings (FCM rows)}
-#'    \item{`"context_embeddings"`}{only context embeddings (FCM columns)}
-#'    \item{`"all"`}{both word and context embeddings}
-#'  }
-#' @param seed integer. Random seed for reproducibility.
-#' @param verbose logical. If `TRUE`, print progress information during training.
-#' @param threads integer. Number of threads to use for training. Default is 
-#'  `RcppParallel::defaultNumThreads()`.
-#'
-#' @details
-#' The SGNS algorithm works by:
-#' 1. Extracting co-occurrence counts from the FCM
-#' 2. For each co-occurrence event, treating it as a positive (word, context) pair
-#' 3. Sampling `neg` negative examples (random words) from the vocabulary
-#' 4. Computing binary logistic loss for positive and negative pairs
-#' 5. Updating embeddings via stochastic gradient descent with learning rate decay
-#'
-#' The algorithm learns two sets of embeddings:
-#' - **Word embeddings**: Initialized randomly, updated primarily as predictors
-#' - **Context embeddings**: Initialized randomly, updated primarily as targets
-#'
-#' For most applications, the word embeddings are the primary output. The
-#' context embeddings can provide additional information or be used in an
-#' ensemble. Set `output = "all"` to keep both.
-#'
-#' **Negative Sampling Strategy:**
-#' Context frequencies are raised to the power of `context_smoothing` when constructing
-#' the negative sampling table. The default `context_smoothing = 0.75` draws negative
-#' samples proportional to $count(w)^{0.75}$, which has been empirically shown
-#' to work better than uniform sampling (Mikolov et al., 2013). This balances
-#' between rare and common words. Set `context_smoothing = 0` for uniform sampling.
-#'
-#' **Target Word Reweighting:**
-#' The `target_smoothing` parameter controls how target words (FCM rows) are
-#' weighted during training. Row sums are raised to the power of `target_smoothing`:
-#' - `target_smoothing = 1` (default): Use observed frequencies (no reweighting)
-#' - `target_smoothing = 0`: Uniform weighting (all words trained equally)
-#' - `target_smoothing < 1`: Downsample frequent words
-#' - `target_smoothing > 1`: Oversample frequent words
-#'
-#' **Subsampling:**
-#' The `subsample` parameter implements the frequency-based subsampling from
-#' Mikolov et al. (2013), which downweights very frequent pairs to improve
-#' training efficiency and representation quality. Each pair (w, c) with
-#' relative frequency f is kept with probability
-#' $min(1, \sqrt{t/f} + t/f)$ where t is the `subsample` threshold.
-#'
-#' **Learning Rate Schedule:**
-#' Learning rate decays linearly from `lr` to 0 across iterations:
-#' $$\text{lr}(t) = \text{lr} \cdot (1 - \text{progress})$$
-#' where progress ranges from 0 to 1. This schedule typically ensures convergence.
-#'
-#' @return A [dynamic_embeddings] object containing:
-#'  \item{`word_embeddings`}{Matrix (or array) of word embedding vectors}
-#'  \item{`context_embeddings`}{Matrix (or array) of context embedding vectors}
-#'  \item{`fcm`}{The input FCM}
-#'  \item{`control`}{Control parameters used}
-#'  \item{`train_method`}{Character string "sgns"}
+#' @param x Either a quanteda `tokens` object or a feature co-occurrence matrix (FCM).
+#' @param ... Additional arguments passed to methods.
 #'
 #' @references
-#' Mikolov, T., Sutskever, I., Chen, K., Corrado, G. S., & Dean, J. (2013).
-#' Distributed representations of words and phrases and their compositionality.
-#' In Advances in Neural Information Processing Systems (pp. 3111–3119).
-#'
-#' Goldberg, Y., & Levy, O. (2014). word2vec explained: Deriving Mikolov et al.'s
-#' negative-sampling word-embedding method. arXiv preprint arXiv:1402.3722.
+#' Mikolov, T., Sutskever, I., Chen, K., Corrado, G. S., & Dean, J. (2013). 
+#' Distributed Representations of Words and Phrases and their Compositionality. 
+#' In C. J. Burges, L. Bottou, M. Welling, Z. Ghahramani, & K. Q. Weinberger (Eds.), 
+#' Advances in Neural Information Processing Systems (Vol. 26). Curran Associates, Inc.
 #'
 #' @export
-#' @examples
-#' \dontrun{
-#' # Create a simple FCM
-#' toks <- quanteda::tokens(
-#'   c("the quick brown fox", "the lazy dog", "quick fox"),
-#'   remove_punct = TRUE
-#' )
-#' fcm_mat <- quanteda::fcm(toks, context = "window")
-#'
-#' # Train embeddings with SGNS
-#' embeddings <- train_sgns(
-#'   fcm_mat,
-#'   n_dims = 50,
-#'   neg = 5,
-#'   iterations = 3,
-#'   seed = 42L
-#' )
-#'
-#' # Access the embeddings
-#' head(embeddings$word_embeddings)
-#' head(embeddings$context_embeddings)
-#' }
-train_sgns <- function(
-  fcm,
+train_sgns <- function(x, ...) {
+  UseMethod("train_sgns")
+}
+
+#' @rdname train_sgns
+#' @method train_sgns tokens
+#' @export
+#' @param context A [context_spec] object defining the context window configuration.
+#'   Required for `train_sgns.tokens`.
+#' @param vocab_size Optional. Limit vocabulary to top N most frequent types.
+#' @param vocab_coverage Optional. Limit vocabulary to cover this proportion of tokens.
+#' @param vocab_keep Optional character vector of types to keep.
+#' @param min_count integer. Minimum frequency for a word to be included in vocabulary. Default is 5.
+#' @param n_dims integer. Dimensionality of embeddings.
+#' @param neg integer. Number of negative samples per positive example. Default is 5.
+#' @param lr numeric. Initial learning rate. Default is 0.05.
+#' @param epochs integer. Number of passes through the data. Default is 5.
+#' @param context_smoothing numeric. Power to raise context frequencies for negative 
+#'   sampling. Default is 0.75.
+#' @param subsample numeric. Subsampling threshold for frequent words. Default is 1e-3.
+#' @param init character. Initialization: "uniform" or "normal". Default is "uniform".
+#' @param seed integer. Random seed for reproducibility.
+#' @param verbose logical. Print progress information.
+#' @param threads integer. Number of threads. Default uses all available cores.
+train_sgns.tokens <- function(
+  x,
+  context = context_spec(),
+  vocab_size = NULL,
+  vocab_coverage = NULL,
+  vocab_keep = NULL,
+  min_count = 5,
   n_dims = 100,
   neg = 5,
   lr = 0.05,
-  iterations = 5,
-  batch_size = 1,
+  epochs = 5,
+  context_smoothing = 0.75,
+  subsample = 1e-3,
+  init = "uniform",
+  seed = NULL,
+  verbose = TRUE,
+  threads = parallel::detectCores(),
+  ...
+) {
+  
+  if (!inherits(context, "context_spec")) {
+    stop("context must be a context_spec object. Use context_spec() to create one.")
+  }
+  
+  if (!inherits(x, "tokens")) {
+    stop("x must be a quanteda tokens object")
+  }
+  
+  if (is.null(seed)) seed <- 1L
+  
+  # Get window size from context_spec
+  window_size <- context$window
+  
+  # Determine vocab_size (0 means unlimited)
+  vocab_limit <- if (is.null(vocab_size)) 0L else as.integer(vocab_size)
+  
+  # Call streaming C++ implementation
+  # Pass tokens object directly (not as.list) to preserve attributes
+  result <- sgns_streaming_cpp(
+    tokens_list = x,
+    min_count = as.integer(min_count),
+    vocab_size = vocab_limit,
+    n_dims = as.integer(n_dims),
+    n_neg = as.integer(neg),
+    window = as.integer(window_size),
+    lr = lr,
+    epochs = as.integer(epochs),
+    context_smoothing = context_smoothing,
+    subsample = subsample,
+    init_type = init,
+    seed = as.integer(seed),
+    verbose = verbose,
+    threads = as.integer(threads)
+  )
+  
+  result
+}
+
+#' @rdname train_sgns
+#' @method train_sgns fcm
+#' @export
+train_sgns.fcm <- function(
+  x,
+  n_dims = 100,
+  neg = 5,
+  lr = 0.05,
+  epochs = 5,
+  grain_size = 1,
   context_smoothing = 0.75,
   target_smoothing = 1,
   subsample = 0,
@@ -149,8 +116,12 @@ train_sgns <- function(
   output = "word_embeddings",
   seed = NULL,
   verbose = TRUE,
-  threads = RcppParallel::defaultNumThreads()
+  threads = parallel::detectCores(),
+  ...
 ) {
+  
+  fcm <- x  # Rename for clarity
+  
   # Input validation
   stopifnot(
     "`fcm` must be a Quanteda fcm, sparseMatrix, SparseArray, or array" =
@@ -160,8 +131,8 @@ train_sgns <- function(
     "`n_dims` must be a positive integer" = is.numeric(n_dims) && n_dims > 0,
     "`neg` must be a positive integer" = is.numeric(neg) && neg > 0,
     "`lr` must be a positive number" = is.numeric(lr) && lr > 0,
-    "`iterations` must be a positive integer" = is.numeric(iterations) && iterations > 0,
-    "`batch_size` must be a positive integer" = is.numeric(batch_size) && batch_size > 0,
+    "`epochs` must be a positive integer" = is.numeric(epochs) && epochs > 0,
+    "`grain_size` must be a positive integer" = is.numeric(grain_size) && grain_size > 0,
     "`context_smoothing` must be a non-negative number" = is.numeric(context_smoothing) && context_smoothing >= 0,
     "`target_smoothing` must be a non-negative number" = is.numeric(target_smoothing) && target_smoothing >= 0,
     "`subsample` must be a non-negative number" = is.numeric(subsample) && subsample >= 0,
@@ -180,14 +151,14 @@ train_sgns <- function(
 
   n_dims <- as.integer(n_dims)
   neg <- as.integer(neg)
-  iterations <- as.integer(iterations)
-  batch_size <- as.integer(batch_size)
+  epochs <- as.integer(epochs)
+  grain_size <- as.integer(grain_size)
   threads <- as.integer(threads)
 
   # Handle 3D arrays
   if (length(dim(fcm)) == 3) {
     return(.train_sgns_3d(
-      fcm, n_dims, neg, lr, iterations, batch_size,
+      fcm, n_dims, neg, lr, epochs, grain_size,
       context_smoothing, target_smoothing, subsample, reject_positives, init, bootstrap_positive, 
       output, verbose, seed, threads
     ))
@@ -232,10 +203,9 @@ train_sgns <- function(
     x_values <- x_values * keep_prob
   }
 
-  # Set number of threads for RcppParallel
-  if (threads > 0) {
-    RcppParallel::setThreadOptions(numThreads = threads)
-  }
+  # Set number of threads
+  if (threads < 1) threads <- 1L
+  threads <- as.integer(threads)
 
   # Call C++ implementation
   cpp_result <- sgns_train_cpp(
@@ -247,19 +217,21 @@ train_sgns <- function(
     n_dims = n_dims,
     n_neg = neg,
     lr = lr,
-    n_iterations = iterations,
-    batch_size = batch_size,
+    epochs = epochs,
+    grain_size = grain_size,
     smoothing = context_smoothing,
     reject_positives = reject_positives,
     init_type = init,
     bootstrap_positive = bootstrap_positive,
     seed = if (is.null(seed)) 0L else as.integer(seed),
-    verbose = verbose
+    verbose = verbose,
+    threads = threads
   )
 
   # Extract and name embeddings
   word_embeddings <- cpp_result$word_embeddings
   context_embeddings <- cpp_result$context_embeddings
+  loss_history <- cpp_result$loss_history
 
   # Preserve rownames
   if (!is.null(rownames(fcm_sparse))) {
@@ -286,6 +258,8 @@ train_sgns <- function(
     word_embeddings = word_emb,
     train_method = "sgns"
   )
+  
+  result$loss_history <- loss_history
 
   # Add SGNS-specific control information
   result$control <- list(
@@ -293,8 +267,8 @@ train_sgns <- function(
     n_dims = n_dims,
     neg = neg,
     lr = lr,
-    iterations = iterations,
-    batch_size = batch_size,
+    epochs = epochs,
+    grain_size = grain_size,
     context_smoothing = context_smoothing,
     target_smoothing = target_smoothing,
     subsample = subsample,
@@ -309,18 +283,18 @@ train_sgns <- function(
 
 #' @keywords internal
 #' Handle 3D FCM arrays
-.train_sgns_3d <- function(fcm, n_dims, neg, lr, iterations, batch_size,
+.train_sgns_3d <- function(fcm, n_dims, neg, lr, epochs, grain_size,
                             context_smoothing, target_smoothing, subsample, reject_positives, init, 
                             bootstrap_positive, output, verbose, seed, threads) {
   fcm_ids <- dimnames(fcm)[[3]]
   fcm_list <- lapply(seq_len(dim(fcm)[3]), function(i) {
-    train_sgns(
+    train_sgns.fcm(
       fcm[, , i],
       n_dims = n_dims,
       neg = neg,
       lr = lr,
-      iterations = iterations,
-      batch_size = batch_size,
+      epochs = epochs,
+      grain_size = grain_size,
       context_smoothing = context_smoothing,
       target_smoothing = target_smoothing,
       subsample = subsample,
@@ -348,6 +322,8 @@ train_sgns <- function(
   } else {
     context_embeddings <- NULL
   }
+  
+  loss_history <- lapply(fcm_list, `[[`, "loss_history")
 
   # Preserve dimension names
   if (!is.null(dimnames(fcm)[[3]])) {
@@ -359,10 +335,14 @@ train_sgns <- function(
     }
   }
 
-  dynamic_embeddings(
+  result <- dynamic_embeddings(
     fcm = fcm,
     context_embeddings = context_embeddings,
     word_embeddings = word_embeddings,
     train_method = "sgns"
   )
+  
+  result$loss_history <- loss_history
+  
+  result
 }

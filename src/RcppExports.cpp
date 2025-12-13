@@ -35,8 +35,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // sgns_train_cpp
-List sgns_train_cpp(const IntegerVector& i_indices, const IntegerVector& j_indices, const NumericVector& x_values, const int n_words, const int n_contexts, const int n_dims, const int n_neg, const double lr, const int n_iterations, const int batch_size, const double smoothing, const bool reject_positives, const std::string init_type, const bool bootstrap_positive, const int seed, const bool verbose);
-RcppExport SEXP _wordembeddings_sgns_train_cpp(SEXP i_indicesSEXP, SEXP j_indicesSEXP, SEXP x_valuesSEXP, SEXP n_wordsSEXP, SEXP n_contextsSEXP, SEXP n_dimsSEXP, SEXP n_negSEXP, SEXP lrSEXP, SEXP n_iterationsSEXP, SEXP batch_sizeSEXP, SEXP smoothingSEXP, SEXP reject_positivesSEXP, SEXP init_typeSEXP, SEXP bootstrap_positiveSEXP, SEXP seedSEXP, SEXP verboseSEXP) {
+List sgns_train_cpp(const IntegerVector& i_indices, const IntegerVector& j_indices, const NumericVector& x_values, const int n_words, const int n_contexts, const int n_dims, const int n_neg, const double lr, const int epochs, const int grain_size, const double smoothing, const bool reject_positives, const std::string init_type, const bool bootstrap_positive, const int seed, const bool verbose, const int threads);
+RcppExport SEXP _wordembeddings_sgns_train_cpp(SEXP i_indicesSEXP, SEXP j_indicesSEXP, SEXP x_valuesSEXP, SEXP n_wordsSEXP, SEXP n_contextsSEXP, SEXP n_dimsSEXP, SEXP n_negSEXP, SEXP lrSEXP, SEXP epochsSEXP, SEXP grain_sizeSEXP, SEXP smoothingSEXP, SEXP reject_positivesSEXP, SEXP init_typeSEXP, SEXP bootstrap_positiveSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::traits::input_parameter< const IntegerVector& >::type i_indices(i_indicesSEXP);
@@ -47,22 +47,48 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const int >::type n_dims(n_dimsSEXP);
     Rcpp::traits::input_parameter< const int >::type n_neg(n_negSEXP);
     Rcpp::traits::input_parameter< const double >::type lr(lrSEXP);
-    Rcpp::traits::input_parameter< const int >::type n_iterations(n_iterationsSEXP);
-    Rcpp::traits::input_parameter< const int >::type batch_size(batch_sizeSEXP);
+    Rcpp::traits::input_parameter< const int >::type epochs(epochsSEXP);
+    Rcpp::traits::input_parameter< const int >::type grain_size(grain_sizeSEXP);
     Rcpp::traits::input_parameter< const double >::type smoothing(smoothingSEXP);
     Rcpp::traits::input_parameter< const bool >::type reject_positives(reject_positivesSEXP);
     Rcpp::traits::input_parameter< const std::string >::type init_type(init_typeSEXP);
     Rcpp::traits::input_parameter< const bool >::type bootstrap_positive(bootstrap_positiveSEXP);
     Rcpp::traits::input_parameter< const int >::type seed(seedSEXP);
     Rcpp::traits::input_parameter< const bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(sgns_train_cpp(i_indices, j_indices, x_values, n_words, n_contexts, n_dims, n_neg, lr, n_iterations, batch_size, smoothing, reject_positives, init_type, bootstrap_positive, seed, verbose));
+    Rcpp::traits::input_parameter< const int >::type threads(threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(sgns_train_cpp(i_indices, j_indices, x_values, n_words, n_contexts, n_dims, n_neg, lr, epochs, grain_size, smoothing, reject_positives, init_type, bootstrap_positive, seed, verbose, threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// sgns_streaming_cpp
+List sgns_streaming_cpp(const List& tokens_list, const int min_count, const int vocab_size, const int n_dims, const int n_neg, const int window, const double lr, const int epochs, const double context_smoothing, const double subsample, const std::string init_type, const int seed, const bool verbose, const int threads);
+RcppExport SEXP _wordembeddings_sgns_streaming_cpp(SEXP tokens_listSEXP, SEXP min_countSEXP, SEXP vocab_sizeSEXP, SEXP n_dimsSEXP, SEXP n_negSEXP, SEXP windowSEXP, SEXP lrSEXP, SEXP epochsSEXP, SEXP context_smoothingSEXP, SEXP subsampleSEXP, SEXP init_typeSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const List& >::type tokens_list(tokens_listSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_count(min_countSEXP);
+    Rcpp::traits::input_parameter< const int >::type vocab_size(vocab_sizeSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_dims(n_dimsSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_neg(n_negSEXP);
+    Rcpp::traits::input_parameter< const int >::type window(windowSEXP);
+    Rcpp::traits::input_parameter< const double >::type lr(lrSEXP);
+    Rcpp::traits::input_parameter< const int >::type epochs(epochsSEXP);
+    Rcpp::traits::input_parameter< const double >::type context_smoothing(context_smoothingSEXP);
+    Rcpp::traits::input_parameter< const double >::type subsample(subsampleSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type init_type(init_typeSEXP);
+    Rcpp::traits::input_parameter< const int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< const bool >::type verbose(verboseSEXP);
+    Rcpp::traits::input_parameter< const int >::type threads(threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(sgns_streaming_cpp(tokens_list, min_count, vocab_size, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, init_type, seed, verbose, threads));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
     {"_wordembeddings_fcm_cpp", (DL_FUNC) &_wordembeddings_fcm_cpp, 14},
-    {"_wordembeddings_sgns_train_cpp", (DL_FUNC) &_wordembeddings_sgns_train_cpp, 16},
+    {"_wordembeddings_sgns_train_cpp", (DL_FUNC) &_wordembeddings_sgns_train_cpp, 17},
+    {"_wordembeddings_sgns_streaming_cpp", (DL_FUNC) &_wordembeddings_sgns_streaming_cpp, 14},
     {NULL, NULL, 0}
 };
 

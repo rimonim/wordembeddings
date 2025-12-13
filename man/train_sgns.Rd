@@ -2,15 +2,39 @@
 % Please edit documentation in R/train_sgns.R
 \name{train_sgns}
 \alias{train_sgns}
+\alias{train_sgns.tokens}
+\alias{train_sgns.fcm}
 \title{Train embeddings with Skip-Gram with Negative Sampling}
 \usage{
-train_sgns(
-  fcm,
+train_sgns(x, ...)
+
+\method{train_sgns}{tokens}(
+  x,
+  context = context_spec(),
+  vocab_size = NULL,
+  vocab_coverage = NULL,
+  vocab_keep = NULL,
+  min_count = 5,
   n_dims = 100,
   neg = 5,
   lr = 0.05,
-  iterations = 5,
-  batch_size = 1,
+  epochs = 5,
+  context_smoothing = 0.75,
+  subsample = 0.001,
+  init = "uniform",
+  seed = NULL,
+  verbose = TRUE,
+  threads = parallel::detectCores(),
+  ...
+)
+
+\method{train_sgns}{fcm}(
+  x,
+  n_dims = 100,
+  neg = 5,
+  lr = 0.05,
+  epochs = 5,
+  grain_size = 1,
   context_smoothing = 0.75,
   target_smoothing = 1,
   subsample = 0,
@@ -20,163 +44,64 @@ train_sgns(
   output = "word_embeddings",
   seed = NULL,
   verbose = TRUE,
-  threads = RcppParallel::defaultNumThreads()
+  threads = parallel::detectCores(),
+  ...
 )
 }
 \arguments{
-\item{fcm}{a \link[quanteda:fcm]{Quanteda fcm} or similar 2D matrix-like or 3D
-array-like object}
+\item{x}{Either a quanteda \code{tokens} object or a feature co-occurrence matrix (FCM).}
+
+\item{...}{Additional arguments passed to methods.}
+
+\item{context}{A \link{context_spec} object defining the context window configuration.
+Required for \code{train_sgns.tokens}.}
+
+\item{vocab_size}{Optional. Limit vocabulary to top N most frequent types.}
+
+\item{vocab_coverage}{Optional. Limit vocabulary to cover this proportion of tokens.}
+
+\item{vocab_keep}{Optional character vector of types to keep.}
+
+\item{min_count}{integer. Minimum frequency for a word to be included in vocabulary. Default is 5.}
 
 \item{n_dims}{integer. Dimensionality of embeddings.}
 
-\item{neg}{integer. Number of negative samples per positive example. Default is 5.
-Values of 5-20 are typical for small datasets, 2-5 for large datasets.}
+\item{neg}{integer. Number of negative samples per positive example. Default is 5.}
 
-\item{lr}{numeric. Initial learning rate. Default is 0.05. Learning rate decays
-linearly across iterations.}
+\item{lr}{numeric. Initial learning rate. Default is 0.05.}
 
-\item{iterations}{integer. Number of passes through the FCM. Default is 5.
-More iterations improve quality but increase computation time.}
+\item{epochs}{integer. Number of passes through the data. Default is 5.}
 
-\item{batch_size}{integer. Controls the grain size for parallel processing.
-Default is 1, which allows the parallel backend to automatically determine
-the chunk size. Larger values (e.g. 10000) specify the exact number of
-pairs processed per thread task, which can tune performance.}
+\item{context_smoothing}{numeric. Power to raise context frequencies for negative
+sampling. Default is 0.75.}
 
-\item{context_smoothing}{numeric. Power to raise context (column) frequencies when constructing
-the negative sampling table. Default is 0.75 (Mikolov et al., 2013). Set to 0 for
-uniform sampling.}
+\item{subsample}{numeric. Subsampling threshold for frequent words. Default is 1e-3.}
 
-\item{target_smoothing}{numeric. Power to raise target word (row) frequencies when
-reweighting the FCM for training. Default is 1 (no reweighting). Set to 0 for
-uniform target sampling (all words trained equally regardless of frequency).
-Values < 1 downsample frequent words; values > 1 oversample frequent words.}
-
-\item{subsample}{numeric. Subsampling threshold for downweighting frequent pairs,
-following Mikolov et al. (2013). Default is 0 (no subsampling). Typical values
-are 1e-3 to 1e-5. Each pair is kept with probability
-\code{min(1, sqrt(subsample / freq) + subsample / freq)}.}
-
-\item{reject_positives}{logical. If \code{TRUE} (default), rejection sampling prevents
-selecting the positive context as a negative sample. If \code{FALSE}, positive and
-negative samples are drawn independently.}
-
-\item{init}{character. Initialization distribution for embeddings:
-\describe{
-\item{\code{"uniform"}}{(default) Uniform distribution $U(-0.5/n_dims, 0.5/n_dims)$}
-\item{\code{"normal"}}{Standard normal distribution $N(0, 1)$}
-}}
-
-\item{bootstrap_positive}{logical. If \code{TRUE}, positive samples are also drawn
-stochastically (with replacement). If \code{FALSE} (default), every observed
-co-occurrence is treated as exactly one positive example.}
-
-\item{output}{character. What to return:
-\describe{
-\item{\code{"word_embeddings"}}{(default) only word embeddings (FCM rows)}
-\item{\code{"context_embeddings"}}{only context embeddings (FCM columns)}
-\item{\code{"all"}}{both word and context embeddings}
-}}
+\item{init}{character. Initialization: "uniform" or "normal". Default is "uniform".}
 
 \item{seed}{integer. Random seed for reproducibility.}
 
-\item{verbose}{logical. If \code{TRUE}, print progress information during training.}
+\item{verbose}{logical. Print progress information.}
 
-\item{threads}{integer. Number of threads to use for training. Default is
-\code{RcppParallel::defaultNumThreads()}.}
-}
-\value{
-A \link{dynamic_embeddings} object containing:
-\item{\code{word_embeddings}}{Matrix (or array) of word embedding vectors}
-\item{\code{context_embeddings}}{Matrix (or array) of context embedding vectors}
-\item{\code{fcm}}{The input FCM}
-\item{\code{control}}{Control parameters used}
-\item{\code{train_method}}{Character string "sgns"}
+\item{threads}{integer. Number of threads. Default uses all available cores.}
 }
 \description{
-\code{train_sgns(fcm)} trains word and context embeddings using the Skip-Gram with
-Negative Sampling (SGNS) algorithm (Mikolov et al., 2013). This is a
-computationally efficient alternative to full softmax that approximates the
-skip-gram model by learning from binary classification tasks between
-observed co-occurrences (positive samples) and randomly sampled words (negative samples).
+Generic function for training word embeddings using the Skip-Gram with Negative
+Sampling (SGNS) algorithm (Mikolov et al., 2013). Supports both streaming from
+tokens (fast, like word2vec) and training from pre-computed FCMs (consistent
+with other methods in this package).
 }
 \details{
-The SGNS algorithm works by:
-\enumerate{
-\item Extracting co-occurrence counts from the FCM
-\item For each co-occurrence event, treating it as a positive (word, context) pair
-\item Sampling \code{neg} negative examples (random words) from the vocabulary
-\item Computing binary logistic loss for positive and negative pairs
-\item Updating embeddings via stochastic gradient descent with learning rate decay
-}
+\strong{Streaming from tokens (\code{train_sgns.tokens})}: Fast implementation that
+processes the text stream directly, similar to word2vec. Requires a \code{context_spec}
+to define the context window.
 
-The algorithm learns two sets of embeddings:
-\itemize{
-\item \strong{Word embeddings}: Initialized randomly, updated primarily as predictors
-\item \strong{Context embeddings}: Initialized randomly, updated primarily as targets
-}
-
-For most applications, the word embeddings are the primary output. The
-context embeddings can provide additional information or be used in an
-ensemble. Set \code{output = "all"} to keep both.
-
-\strong{Negative Sampling Strategy:}
-Context frequencies are raised to the power of \code{context_smoothing} when constructing
-the negative sampling table. The default \code{context_smoothing = 0.75} draws negative
-samples proportional to $count(w)^{0.75}$, which has been empirically shown
-to work better than uniform sampling (Mikolov et al., 2013). This balances
-between rare and common words. Set \code{context_smoothing = 0} for uniform sampling.
-
-\strong{Target Word Reweighting:}
-The \code{target_smoothing} parameter controls how target words (FCM rows) are
-weighted during training. Row sums are raised to the power of \code{target_smoothing}:
-\itemize{
-\item \code{target_smoothing = 1} (default): Use observed frequencies (no reweighting)
-\item \code{target_smoothing = 0}: Uniform weighting (all words trained equally)
-\item \code{target_smoothing < 1}: Downsample frequent words
-\item \code{target_smoothing > 1}: Oversample frequent words
-}
-
-\strong{Subsampling:}
-The \code{subsample} parameter implements the frequency-based subsampling from
-Mikolov et al. (2013), which downweights very frequent pairs to improve
-training efficiency and representation quality. Each pair (w, c) with
-relative frequency f is kept with probability
-$min(1, \sqrt{t/f} + t/f)$ where t is the \code{subsample} threshold.
-
-\strong{Learning Rate Schedule:}
-Learning rate decays linearly from \code{lr} to 0 across iterations:
-$$\text{lr}(t) = \text{lr} \cdot (1 - \text{progress})$$
-where progress ranges from 0 to 1. This schedule typically ensures convergence.
-}
-\examples{
-\dontrun{
-# Create a simple FCM
-toks <- quanteda::tokens(
-  c("the quick brown fox", "the lazy dog", "quick fox"),
-  remove_punct = TRUE
-)
-fcm_mat <- quanteda::fcm(toks, context = "window")
-
-# Train embeddings with SGNS
-embeddings <- train_sgns(
-  fcm_mat,
-  n_dims = 50,
-  neg = 5,
-  iterations = 3,
-  seed = 42L
-)
-
-# Access the embeddings
-head(embeddings$word_embeddings)
-head(embeddings$context_embeddings)
-}
+\strong{Training from FCM (\code{train_sgns.fcm})}: Trains from pre-computed co-occurrence
+counts. Useful when you want to use the same FCM for multiple algorithms or
+apply FCM transformations.
 }
 \references{
 Mikolov, T., Sutskever, I., Chen, K., Corrado, G. S., & Dean, J. (2013).
 Distributed representations of words and phrases and their compositionality.
 In Advances in Neural Information Processing Systems (pp. 3111–3119).
-
-Goldberg, Y., & Levy, O. (2014). word2vec explained: Deriving Mikolov et al.'s
-negative-sampling word-embedding method. arXiv preprint arXiv:1402.3722.
 }

@@ -6,16 +6,17 @@
 \usage{
 fcm(
   x,
+  context = NULL,
   window = 5L,
   weights = "linear",
   weights_args = list(),
   distance_metric = c("words", "characters", "surprisal"),
   direction = "symmetric",
+  include_target = FALSE,
   tri = FALSE,
   vocab_size = NULL,
   vocab_coverage = NULL,
   vocab_keep = NULL,
-  include_target = FALSE,
   verbose = FALSE,
   threads = NULL
 )
@@ -23,15 +24,27 @@ fcm(
 \arguments{
 \item{x}{A quanteda \code{tokens} object.}
 
-\item{window}{Size of the context window (in words) on either side of the target word.}
+\item{context}{Either a \link{context_spec} object or parameters passed to create one.
+If provided as a \code{context_spec}, other context-related parameters are ignored.}
 
-\item{weights}{Either a string specifying a decay function of distance ("linear", "harmonic", "exponential", "power", or "none") or a numeric vector of weights. If a vector, its length must be equal to \code{window} (if \code{include_target = FALSE}) or \code{window + 1} (if \code{include_target = TRUE}) for one-sided context, or \code{2 * window} / \code{2 * window + 1} for two-sided context.}
+\item{window}{Size of the context window (in words) on either side of the target word.
+Ignored if \code{context} is a \code{context_spec} object.}
 
-\item{weights_args}{List of arguments for the decay function (e.g. \code{alpha} for power/exp).}
+\item{weights}{Either a string specifying a decay function of distance ("linear",
+"harmonic", "exponential", "power", or "none") or a numeric vector of weights.
+Ignored if \code{context} is a \code{context_spec} object.}
 
-\item{distance_metric}{Metric to input to decay function: "words", "characters", "surprisal". "words" uses token distance; "characters" weights words by their length in characters; "surprisal" weights words by -log(probability) based on unigram frequencies. Metrics are rescaled such that the average width of a word is fixed at 1 (i.e. \code{window = 5} will result in an average window size of 5 words).}
+\item{weights_args}{List of arguments for the decay function (e.g. \code{alpha} for power/exp).
+Ignored if \code{context} is a \code{context_spec} object.}
 
-\item{direction}{String ("symmetric", "forward", "backward") or numeric ratio of forward to backward weight.}
+\item{distance_metric}{Metric to input to decay function: "words", "characters",
+"surprisal". Ignored if \code{context} is a \code{context_spec} object.}
+
+\item{direction}{String ("symmetric", "forward", "backward") or numeric ratio of
+forward to backward weight. Ignored if \code{context} is a \code{context_spec} object.}
+
+\item{include_target}{Logical. If TRUE, the target word is included in the context
+(distance 0). Ignored if \code{context} is a \code{context_spec} object.}
 
 \item{tri}{Logical. If TRUE, return only the upper triangle (if symmetric).}
 
@@ -40,8 +53,6 @@ fcm(
 \item{vocab_coverage}{Optional. Limit vocabulary to cover this proportion of tokens.}
 
 \item{vocab_keep}{Optional character vector of types to keep.}
-
-\item{include_target}{Logical. If TRUE, the target word is included in the context (distance 0).}
 
 \item{verbose}{Logical.}
 

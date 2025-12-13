@@ -1,5 +1,5 @@
 RCPP_PARALLEL_LIBS = $(shell "${R_HOME}/bin/Rscript" -e "RcppParallel::RcppParallelLibs()")
 RCPP_PARALLEL_LIBPATH = $(shell "${R_HOME}/bin/Rscript" -e "cat(system.file('lib', package='RcppParallel'))")
 
-PKG_LIBS += $(RCPP_PARALLEL_LIBS) -Wl,-rpath,$(RCPP_PARALLEL_LIBPATH)
-PKG_CXXFLAGS = -O3 -DNDEBUG
+PKG_LIBS = $(RCPP_PARALLEL_LIBS) -Wl,-rpath,$(RCPP_PARALLEL_LIBPATH) -pthread
+PKG_CXXFLAGS = -O3 -DNDEBUG -pthread -march=native -ffast-math
