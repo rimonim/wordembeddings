@@ -69,10 +69,59 @@ train_sgns.tokens <- function(
   direction <- context$direction
   include_target <- context$include_target
   
-  # Determine vocab_size (0 means unlimited)
-  vocab_limit <- if (is.null(vocab_size)) 0L else as.integer(vocab_size)
+  # Apply vocabulary filtering in R (matching fcm() logic exactly)
+  types <- quanteda::types(x)
+  n_types <- length(types)
+  keep_types <- rep(TRUE, n_types)
   
-  # Compute type_widths based on distance_metric
+  # Get frequencies once (used by multiple filters)
+  freqs <- NULL
+  if (!is.null(vocab_keep) || !is.null(vocab_size) || !is.null(vocab_coverage) || !is.null(min_count)) {
+    freqs <- colSums(quanteda::dfm(x, tolower = FALSE))
+    # Sort by frequency (descending) for vocab_size and vocab_coverage
+    freqs <- sort(freqs, decreasing = TRUE)
+  }
+  
+  # Apply vocab filters in order: vocab_size → vocab_coverage → vocab_keep → min_count
+  if (!is.null(vocab_size)) {
+    limit_types <- head(names(freqs), vocab_size)
+    keep_types <- keep_types & (types %in% limit_types)
+  }
+  
+  if (!is.null(vocab_coverage)) {
+    total_tokens <- sum(freqs)
+    cum_freq <- cumsum(freqs) / total_tokens
+    cutoff_idx <- which(cum_freq >= vocab_coverage)[1]
+    if (is.na(cutoff_idx)) cutoff_idx <- length(freqs)
+    coverage_types <- head(names(freqs), cutoff_idx)
+    keep_types <- keep_types & (types %in% coverage_types)
+  }
+  
+  if (!is.null(vocab_keep)) {
+    # Force include vocab_keep words (OR condition)
+    keep_types <- keep_types | (types %in% vocab_keep)
+  }
+  
+  if (!is.null(min_count) && min_count > 1) {
+    # Match types with their frequencies
+    m <- match(types, names(freqs))
+    type_freqs <- freqs[m]
+    type_freqs[is.na(type_freqs)] <- 0
+    
+    # Apply min_count filter, but always keep vocab_keep words
+    min_count_filter <- type_freqs >= min_count
+    if (!is.null(vocab_keep)) {
+      min_count_filter <- min_count_filter | (types %in% vocab_keep)
+    }
+    keep_types <- keep_types & min_count_filter
+  }
+  
+  # Get list of types to keep - will pass to C++ to filter vocabulary
+  # This ensures C++ uses exactly the same vocabulary as fcm()
+  types_to_keep <- types[keep_types]
+  
+  # Recompute types and widths for the original (unfiltered) tokens
+  # C++ will handle the actual filtering based on types_to_keep
   types <- quanteda::types(x)
   n_types <- length(types)
   type_widths <- rep(1.0, n_types)
@@ -141,17 +190,18 @@ train_sgns.tokens <- function(
     }
   }
   
-  # Prepare vocab_keep as character vector
-  vocab_keep_vec <- if (!is.null(vocab_keep)) as.character(vocab_keep) else character(0)
-  vocab_coverage_val <- if (!is.null(vocab_coverage)) vocab_coverage else 0.0
+  # Pass the filtered vocabulary list to C++
+  # C++ will only build vocabulary from these types
+  vocab_keep_vec <- as.character(types_to_keep)
   
   # Call enhanced streaming C++ implementation
+  # Note: vocabulary filtering done in R, passed via vocab_keep
   result <- sgns_streaming_cpp(
     tokens_list = x,
-    min_count = as.integer(min_count),
-    vocab_size = vocab_limit,
-    vocab_coverage = vocab_coverage_val,
-    vocab_keep = vocab_keep_vec,
+    min_count = 1L,  # Not used - filtering done in R
+    vocab_size = 0L,  # Not used - filtering done in R
+    vocab_coverage = 0.0,  # Not used - filtering done in R
+    vocab_keep = vocab_keep_vec,  # Contains the filtered vocabulary from R
     type_widths = type_widths,
     n_dims = as.integer(n_dims),
     n_neg = as.integer(neg),

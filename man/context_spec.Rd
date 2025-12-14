@@ -14,7 +14,7 @@ context_spec(
   vocab_size = NULL,
   vocab_coverage = NULL,
   vocab_keep = NULL,
-  min_count = 5L,
+  min_count = 1L,
   context_smoothing = 0.75,
   target_smoothing = 1,
   subsample = 0.001
@@ -50,7 +50,7 @@ context (distance 0).}
 
 \item{vocab_keep}{Optional character vector of types to always keep in vocabulary.}
 
-\item{min_count}{Minimum frequency for a word to be included in vocabulary. Default is 5.}
+\item{min_count}{Minimum frequency for a word to be included in vocabulary. Default is 1 (no filtering).}
 
 \item{context_smoothing}{Power to raise context frequencies for negative sampling. Default is 0.75.}
 

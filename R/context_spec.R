@@ -25,7 +25,7 @@
 #' @param vocab_size Optional. Limit vocabulary to top N most frequent types.
 #' @param vocab_coverage Optional. Limit vocabulary to cover this proportion of tokens.
 #' @param vocab_keep Optional character vector of types to always keep in vocabulary.
-#' @param min_count Minimum frequency for a word to be included in vocabulary. Default is 5.
+#' @param min_count Minimum frequency for a word to be included in vocabulary. Default is 1 (no filtering).
 #' @param context_smoothing Power to raise context frequencies for negative sampling. Default is 0.75.
 #' @param target_smoothing Power to raise target word frequencies. Default is 1 (no smoothing).
 #' @param subsample Subsampling threshold for frequent words (Mikolov et al. 2013). Default is 1e-3.
@@ -58,7 +58,7 @@ context_spec <- function(
   vocab_size = NULL,
   vocab_coverage = NULL,
   vocab_keep = NULL,
-  min_count = 5L,
+  min_count = 1L,
   context_smoothing = 0.75,
   target_smoothing = 1.0,
   subsample = 1e-3

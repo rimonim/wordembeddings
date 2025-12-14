@@ -37,11 +37,14 @@ inline float fast_sigmoid(float x, const std::vector<float>& exp_table) {
 }
 
 // Build vocabulary from tokens
+// NOTE: Vocabulary filtering (vocab_size, vocab_coverage, min_count) is now done in R
+// This function only counts frequencies and optionally forces inclusion of vocab_keep words
 void build_vocab(
     const List& tokens_list,
     const CharacterVector& token_types,
-    int min_count,
-    double vocab_coverage,
+    int vocab_size,  // Ignored - filtering done in R
+    int min_count,   // Ignored - filtering done in R
+    double vocab_coverage,  // Ignored - filtering done in R
     const CharacterVector& vocab_keep,
     std::vector<std::string>& index_to_word,
     std::vector<int>& type_to_vocab,  // Maps quanteda type index to our vocab index
@@ -68,53 +71,39 @@ void build_vocab(
     }
   }
   
-  // Build set of words to always keep
-  std::set<std::string> keep_words;
+  // Build set of allowed words (vocab_keep now contains the complete filtered vocabulary from R)
+  std::set<std::string> allowed_words;
   for (int i = 0; i < vocab_keep.size(); ++i) {
-    keep_words.insert(as<std::string>(vocab_keep[i]));
+    allowed_words.insert(as<std::string>(vocab_keep[i]));
   }
   
-  // Collect types meeting min_count OR in vocab_keep
+  // Collect only types that are in the allowed vocabulary
   std::vector<std::tuple<std::string, long long, int>> word_vec;
   word_vec.reserve(n_types);
   
-  for (int i = 0; i < n_types; ++i) {
-    std::string word = as<std::string>(token_types[i]);
-    bool should_keep = (type_counts[i] >= min_count) || (keep_words.count(word) > 0);
-    
-    if (should_keep) {
-      word_vec.push_back({word, type_counts[i], i});
+  if (allowed_words.empty()) {
+    // No filtering - use all types that appear
+    for (int i = 0; i < n_types; ++i) {
+      if (type_counts[i] > 0) {
+        std::string word = as<std::string>(token_types[i]);
+        word_vec.push_back({word, type_counts[i], i});
+      }
+    }
+  } else {
+    // Only include types in the allowed vocabulary
+    for (int i = 0; i < n_types; ++i) {
+      std::string word = as<std::string>(token_types[i]);
+      if (allowed_words.count(word) > 0 && type_counts[i] > 0) {
+        word_vec.push_back({word, type_counts[i], i});
+      }
     }
   }
   
   // Sort by frequency (most frequent first)
-  std::sort(word_vec.begin(), word_vec.end(),
+  std::stable_sort(word_vec.begin(), word_vec.end(),
     [](const auto& a, const auto& b) {
       return std::get<1>(a) > std::get<1>(b);
     });
-  
-  // Apply vocab_coverage if specified
-  if (vocab_coverage > 0.0 && vocab_coverage < 1.0) {
-    long long cumulative_count = 0;
-    long long coverage_threshold = static_cast<long long>(total_words * vocab_coverage);
-    size_t coverage_vocab_size = 0;
-    
-    for (size_t i = 0; i < word_vec.size(); ++i) {
-      cumulative_count += std::get<1>(word_vec[i]);
-      coverage_vocab_size = i + 1;
-      if (cumulative_count >= coverage_threshold) break;
-    }
-    
-    // Keep words up to coverage, plus any forced words beyond that
-    std::vector<std::tuple<std::string, long long, int>> filtered_vec;
-    for (size_t i = 0; i < word_vec.size(); ++i) {
-      const std::string& word = std::get<0>(word_vec[i]);
-      if (i < coverage_vocab_size || keep_words.count(word) > 0) {
-        filtered_vec.push_back(word_vec[i]);
-      }
-    }
-    word_vec = std::move(filtered_vec);
-  }
   
   // Build mapping from quanteda type index to our vocab index
   type_to_vocab.assign(n_types, -1);  // -1 means not in vocab
@@ -469,20 +458,8 @@ List sgns_streaming_cpp(
   std::vector<long long> word_counts;
   long long total_words = 0;
   
-  build_vocab(tokens_list, token_types, min_count, vocab_coverage, vocab_keep,
+  build_vocab(tokens_list, token_types, vocab_size, min_count, vocab_coverage, vocab_keep,
               index_to_word, type_to_vocab, word_counts, total_words);
-  
-  // Limit vocabulary size if requested
-  if (vocab_size > 0 && static_cast<int>(index_to_word.size()) > vocab_size) {
-    index_to_word.resize(vocab_size);
-    
-    // Update type_to_vocab mapping: words beyond vocab_size become -1
-    for (size_t i = 0; i < type_to_vocab.size(); ++i) {
-      if (type_to_vocab[i] >= vocab_size) {
-        type_to_vocab[i] = -1;
-      }
-    }
-  }
   
   int vocab_len = index_to_word.size();
   

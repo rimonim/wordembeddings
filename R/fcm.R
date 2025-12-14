@@ -26,6 +26,7 @@ fcm <- function(x,
     vocab_size <- context$vocab_size
     vocab_coverage <- context$vocab_coverage
     vocab_keep <- context$vocab_keep
+    min_count <- context$min_count
     
     if (!inherits(x, "tokens")) stop("x must be a quanteda tokens object")
     
@@ -110,28 +111,46 @@ fcm <- function(x,
     # 1. Determine Vocabulary to Keep
     keep_types <- rep(TRUE, n_types)
     
-    if (!is.null(vocab_keep) || !is.null(vocab_size) || !is.null(vocab_coverage)) {
-        if (!is.null(vocab_size) || !is.null(vocab_coverage)) {
-             freqs <- colSums(quanteda::dfm(x, tolower = FALSE))
-             
-             if (!is.null(vocab_size)) {
-                 limit_types <- head(names(freqs), vocab_size)
-                 keep_types <- keep_types & (types %in% limit_types)
-             }
-             
-             if (!is.null(vocab_coverage)) {
-                 total_tokens <- sum(freqs)
-                 cum_freq <- cumsum(freqs) / total_tokens
-                 cutoff_idx <- which(cum_freq >= vocab_coverage)[1]
-                 if (is.na(cutoff_idx)) cutoff_idx <- length(freqs)
-                 coverage_types <- head(names(freqs), cutoff_idx)
-                 keep_types <- keep_types & (types %in% coverage_types)
-             }
-        }
+    # Get frequencies once (used by multiple filters)
+    freqs <- NULL
+    if (!is.null(vocab_keep) || !is.null(vocab_size) || !is.null(vocab_coverage) || !is.null(min_count)) {
+        freqs <- colSums(quanteda::dfm(x, tolower = FALSE))
+        # Sort by frequency (descending) for vocab_size and vocab_coverage
+        freqs <- sort(freqs, decreasing = TRUE)
+    }
+    
+    # Apply vocab filters in order: vocab_size → vocab_coverage → vocab_keep → min_count
+    if (!is.null(vocab_size)) {
+        limit_types <- head(names(freqs), vocab_size)
+        keep_types <- keep_types & (types %in% limit_types)
+    }
+    
+    if (!is.null(vocab_coverage)) {
+        total_tokens <- sum(freqs)
+        cum_freq <- cumsum(freqs) / total_tokens
+        cutoff_idx <- which(cum_freq >= vocab_coverage)[1]
+        if (is.na(cutoff_idx)) cutoff_idx <- length(freqs)
+        coverage_types <- head(names(freqs), cutoff_idx)
+        keep_types <- keep_types & (types %in% coverage_types)
+    }
+    
+    if (!is.null(vocab_keep)) {
+        # Force include vocab_keep words (OR condition)
+        keep_types <- keep_types | (types %in% vocab_keep)
+    }
+    
+    if (!is.null(min_count) && min_count > 1) {
+        # Match types with their frequencies
+        m <- match(types, names(freqs))
+        type_freqs <- freqs[m]
+        type_freqs[is.na(type_freqs)] <- 0
         
+        # Apply min_count filter, but always keep vocab_keep words
+        min_count_filter <- type_freqs >= min_count
         if (!is.null(vocab_keep)) {
-            keep_types <- keep_types & (types %in% vocab_keep)
+            min_count_filter <- min_count_filter | (types %in% vocab_keep)
         }
+        keep_types <- keep_types & min_count_filter
     }
     
     # 2. Determine Widths
