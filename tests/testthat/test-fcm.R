@@ -3,7 +3,8 @@ test_that("fcm works with basic input", {
   toks <- quanteda::tokens(txt)
   
   # Window = 1, symmetric, no decay, full matrix
-  mat <- fcm(toks, window = 1, weights = "none", tri = FALSE)
+  ctx <- context_spec(window = 1, weights = "none")
+  mat <- fcm(toks, context = ctx, tri = FALSE)
   
   expect_true(sum(mat) > 0)
   # a-b co-occur
@@ -20,7 +21,8 @@ test_that("fcm works with decay", {
   # Window = 2, linear decay
   # dist(a,b) = 1. Weight = (2 - 1 + 1)/2 = 1
   # dist(a,c) = 2. Weight = (2 - 2 + 1)/2 = 0.5
-  mat <- fcm(toks, window = 2, weights = "linear", tri = TRUE)
+  ctx <- context_spec(window = 2, weights = "linear")
+  mat <- fcm(toks, context = ctx, tri = TRUE)
   
   expect_equal(as.numeric(mat["a", "b"]), 1)
   expect_equal(as.numeric(mat["a", "c"]), 0.5)
@@ -35,7 +37,8 @@ test_that("fcm works with include_target", {
   # Code: if linear, w = (window_size + 1.0) / window_size;
   # Here window=1. w = 2.
   
-  mat <- fcm(toks, window = 1, weights = "linear", include_target = TRUE)
+  ctx <- context_spec(window = 1, weights = "linear", include_target = TRUE)
+  mat <- fcm(toks, context = ctx)
   
   expect_true(as.numeric(mat["a", "a"]) > 0)
 })
@@ -49,7 +52,8 @@ test_that("fcm matches quanteda::fcm for boolean weights", {
   
   # 1. Symmetric, window=1, tri=TRUE
   # Note: quanteda::fcm default is tri=TRUE
-  my_fcm <- fcm(toks, window = 1, weights = "none", tri = TRUE)
+  ctx <- context_spec(window = 1, weights = "none")
+  my_fcm <- fcm(toks, context = ctx, tri = TRUE)
   q_fcm <- quanteda::fcm(toks, context = "window", window = 1, count = "frequency", tri = TRUE)
   
   # Compare objects directly
@@ -67,7 +71,8 @@ test_that("fcm matches quanteda::fcm for boolean weights", {
   expect_equal(as.matrix(my_fcm), as.matrix(q_fcm))
   
   # 2. Symmetric, window=2, tri=FALSE
-  my_fcm <- fcm(toks, window = 2, weights = "none", tri = FALSE)
+  ctx <- context_spec(window = 2, weights = "none")
+  my_fcm <- fcm(toks, context = ctx, tri = FALSE)
   q_fcm <- quanteda::fcm(toks, context = "window", window = 2, count = "frequency", tri = FALSE)
   
   expect_equal(as.matrix(my_fcm), as.matrix(q_fcm))
@@ -80,7 +85,8 @@ test_that("fcm matches quanteda::fcm for ordered/forward", {
   toks <- quanteda::tokens(txt)
   
   # Forward (ordered=TRUE in quanteda)
-  my_fcm <- fcm(toks, window = 2, weights = "none", direction = "forward")
+  ctx <- context_spec(window = 2, weights = "none", direction = "forward")
+  my_fcm <- fcm(toks, context = ctx)
   q_fcm <- quanteda::fcm(toks, context = "window", window = 2, ordered = TRUE)
 
   expect_equal(as.matrix(my_fcm), as.matrix(q_fcm))
@@ -95,7 +101,8 @@ test_that("fcm matches quanteda::fcm for custom weights", {
   # Weights for window=2: dist1=1, dist2=0.5
   w <- c(1, 0.5)
   
-  my_fcm <- fcm(toks, window = 2, weights = w, tri = TRUE)
+  ctx <- context_spec(window = 2, weights = w)
+  my_fcm <- fcm(toks, context = ctx, tri = TRUE)
   q_fcm <- quanteda::fcm(toks, context = "window", count = "weighted", window = 2, weights = w, tri = TRUE)
   
   expect_equal(as.matrix(my_fcm), as.matrix(q_fcm))

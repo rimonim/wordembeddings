@@ -22,6 +22,13 @@
 #'   of forward to backward weight.
 #' @param include_target Logical. If TRUE, the target word is included in the 
 #'   context (distance 0).
+#' @param vocab_size Optional. Limit vocabulary to top N most frequent types.
+#' @param vocab_coverage Optional. Limit vocabulary to cover this proportion of tokens.
+#' @param vocab_keep Optional character vector of types to always keep in vocabulary.
+#' @param min_count Minimum frequency for a word to be included in vocabulary. Default is 5.
+#' @param context_smoothing Power to raise context frequencies for negative sampling. Default is 0.75.
+#' @param target_smoothing Power to raise target word frequencies. Default is 1 (no smoothing).
+#' @param subsample Subsampling threshold for frequent words (Mikolov et al. 2013). Default is 1e-3.
 #'
 #' @return A `context_spec` object containing the context configuration.
 #'
@@ -47,7 +54,14 @@ context_spec <- function(
   weights_args = list(),
   distance_metric = c("words", "characters", "surprisal"),
   direction = "symmetric",
-  include_target = FALSE
+  include_target = FALSE,
+  vocab_size = NULL,
+  vocab_coverage = NULL,
+  vocab_keep = NULL,
+  min_count = 5L,
+  context_smoothing = 0.75,
+  target_smoothing = 1.0,
+  subsample = 1e-3
 ) {
   
   distance_metric <- match.arg(distance_metric)
@@ -82,7 +96,14 @@ context_spec <- function(
       weights_args = weights_args,
       distance_metric = distance_metric,
       direction = direction,
-      include_target = as.logical(include_target)
+      include_target = as.logical(include_target),
+      vocab_size = if (!is.null(vocab_size)) as.integer(vocab_size) else NULL,
+      vocab_coverage = vocab_coverage,
+      vocab_keep = vocab_keep,
+      min_count = as.integer(min_count),
+      context_smoothing = context_smoothing,
+      target_smoothing = target_smoothing,
+      subsample = subsample
     ),
     class = "context_spec"
   )

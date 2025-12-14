@@ -45,7 +45,9 @@ train_lm <- function(fcm, fcm_weight = NULL, n_dims = 100, context_embeddings = 
 	dynamic_embeddings(fcm = fcm, context_embeddings = context_embeddings, word_embeddings = word_embeddings, control = dynamic_embeddings_control(control, train_method = "lm"))
 }
 
+
 #' @rdname fit_word_embeddings
+#' Helpers to fit word embeddings using regression
 #' @keywords internal
 fit_word_embeddings_lm <- function(fcm, fcm_weight = NULL, context_embeddings, control = dynamic_embeddings_control()) {
 	stopifnot(

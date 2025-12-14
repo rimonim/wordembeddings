@@ -5,9 +5,11 @@
 #include <random>
 #include <numeric>
 #include <iomanip>
+#include <string>
 #include <thread>
 #include <atomic>
 #include <cstring>
+#include <set>
 
 using namespace Rcpp;
 
@@ -34,7 +36,686 @@ inline float fast_sigmoid(float x, const std::vector<float>& exp_table) {
   return exp_table[idx];
 }
 
-// Thread worker function - processes a range of training examples
+// Build vocabulary from tokens
+void build_vocab(
+    const List& tokens_list,
+    const CharacterVector& token_types,
+    int min_count,
+    double vocab_coverage,
+    const CharacterVector& vocab_keep,
+    std::vector<std::string>& index_to_word,
+    std::vector<int>& type_to_vocab,  // Maps quanteda type index to our vocab index
+    std::vector<long long>& word_counts_out,
+    long long& total_words
+) {
+  int n_types = token_types.size();
+  
+  // Count word frequencies
+  std::vector<long long> type_counts(n_types, 0);
+  total_words = 0;
+  
+  for (int doc = 0; doc < tokens_list.size(); ++doc) {
+    SEXP doc_sexp = tokens_list[doc];
+    if (TYPEOF(doc_sexp) != INTSXP) continue;
+    
+    IntegerVector doc_tokens = as<IntegerVector>(doc_sexp);
+    for (int i = 0; i < doc_tokens.size(); ++i) {
+      int type_idx = doc_tokens[i] - 1;  // quanteda uses 1-indexing
+      if (type_idx >= 0 && type_idx < n_types) {
+        type_counts[type_idx]++;
+        total_words++;
+      }
+    }
+  }
+  
+  // Build set of words to always keep
+  std::set<std::string> keep_words;
+  for (int i = 0; i < vocab_keep.size(); ++i) {
+    keep_words.insert(as<std::string>(vocab_keep[i]));
+  }
+  
+  // Collect types meeting min_count OR in vocab_keep
+  std::vector<std::tuple<std::string, long long, int>> word_vec;
+  word_vec.reserve(n_types);
+  
+  for (int i = 0; i < n_types; ++i) {
+    std::string word = as<std::string>(token_types[i]);
+    bool should_keep = (type_counts[i] >= min_count) || (keep_words.count(word) > 0);
+    
+    if (should_keep) {
+      word_vec.push_back({word, type_counts[i], i});
+    }
+  }
+  
+  // Sort by frequency (most frequent first)
+  std::sort(word_vec.begin(), word_vec.end(),
+    [](const auto& a, const auto& b) {
+      return std::get<1>(a) > std::get<1>(b);
+    });
+  
+  // Apply vocab_coverage if specified
+  if (vocab_coverage > 0.0 && vocab_coverage < 1.0) {
+    long long cumulative_count = 0;
+    long long coverage_threshold = static_cast<long long>(total_words * vocab_coverage);
+    size_t coverage_vocab_size = 0;
+    
+    for (size_t i = 0; i < word_vec.size(); ++i) {
+      cumulative_count += std::get<1>(word_vec[i]);
+      coverage_vocab_size = i + 1;
+      if (cumulative_count >= coverage_threshold) break;
+    }
+    
+    // Keep words up to coverage, plus any forced words beyond that
+    std::vector<std::tuple<std::string, long long, int>> filtered_vec;
+    for (size_t i = 0; i < word_vec.size(); ++i) {
+      const std::string& word = std::get<0>(word_vec[i]);
+      if (i < coverage_vocab_size || keep_words.count(word) > 0) {
+        filtered_vec.push_back(word_vec[i]);
+      }
+    }
+    word_vec = std::move(filtered_vec);
+  }
+  
+  // Build mapping from quanteda type index to our vocab index
+  type_to_vocab.assign(n_types, -1);  // -1 means not in vocab
+  word_counts_out.resize(word_vec.size());
+  
+  for (size_t vocab_idx = 0; vocab_idx < word_vec.size(); ++vocab_idx) {
+    const std::string& word = std::get<0>(word_vec[vocab_idx]);
+    long long count = std::get<1>(word_vec[vocab_idx]);
+    int type_idx = std::get<2>(word_vec[vocab_idx]);
+    
+    index_to_word.push_back(word);
+    word_counts_out[vocab_idx] = count;
+    type_to_vocab[type_idx] = vocab_idx;
+  }
+}
+
+// Calculate weight based on distance
+inline float calculate_weight(float dist, float window, const std::string& type, 
+                               float param, const std::vector<float>& weights_vec, 
+                               int weights_mode, bool include_target, int offset) {
+  // Custom weight vector
+  if (weights_mode > 0) {
+    int idx = -1;
+    if (weights_mode == 1) {  // 1..W
+      idx = std::abs(offset) - 1;
+      if (idx >= 0 && idx < static_cast<int>(weights_vec.size())) return weights_vec[idx];
+    } else if (weights_mode == 2) {  // 0..W
+      idx = std::abs(offset);
+      if (idx >= 0 && idx < static_cast<int>(weights_vec.size())) return weights_vec[idx];
+    } else if (weights_mode == 3) {  // -W..-1, 1..W
+      int win = (weights_vec.size()) / 2;
+      idx = (offset < 0) ? (offset + win) : (win + offset - 1);
+      if (idx >= 0 && idx < static_cast<int>(weights_vec.size())) return weights_vec[idx];
+    } else if (weights_mode == 4) {  // -W..W
+      int win = weights_vec.size() / 2;
+      idx = offset + win;
+      if (idx >= 0 && idx < static_cast<int>(weights_vec.size())) return weights_vec[idx];
+    }
+    return 0.0f;
+  }
+  
+  // Decay functions
+  if (dist > window) return 0.0f;
+  
+  if (type == "linear") {
+    return std::max(0.0f, (window - dist + 1.0f) / window);
+  } else if (type == "harmonic") {
+    return (dist == 0.0f) ? 1.0f : 1.0f / dist;
+  } else if (type == "exponential") {
+    return std::exp(-param * dist);
+  } else if (type == "power") {
+    return (dist == 0.0f) ? 1.0f : std::pow(dist, -param);
+  } else {  // none
+    return 1.0f;
+  }
+}
+
+// Calculate distance between positions using type widths
+inline float calculate_distance(int pos1, int pos2, const std::vector<int>& sentence,
+                                const std::vector<float>& type_widths) {
+  if (pos1 == pos2) return 0.0f;
+  
+  int start = std::min(pos1, pos2);
+  int end = std::max(pos1, pos2);
+  
+  float dist = 0.0f;
+  for (int i = start; i < end; ++i) {
+    if (i == start) {
+      dist = 1.0f;
+    } else {
+      int token_idx = sentence[i];
+      if (token_idx >= 0 && token_idx < static_cast<int>(type_widths.size())) {
+        dist += type_widths[token_idx];
+      } else {
+        dist += 1.0f;
+      }
+    }
+  }
+  return dist;
+}
+
+// Thread worker for streaming SGNS (word2vec style)
+void sgns_streaming_worker(
+    // Data (shared, read-only)
+    const std::vector<std::vector<int>>& sentences,  // Pre-converted to indices
+    const std::vector<long long>& word_counts,
+    const std::vector<int>& neg_table,
+    const int neg_table_size,
+    const std::vector<float>& exp_table,
+    const std::vector<float>& type_widths,
+    // Embeddings (shared, read-write)
+    float* word_emb,
+    float* context_emb,
+    // Parameters
+    const int n_dims,
+    const int n_neg,
+    const int window,
+    const float initial_lr,
+    const long long total_train_words,
+    const int thread_id,
+    const int n_threads,
+    const int start_sent,
+    const int end_sent,
+    // Weighting parameters
+    const std::string& weights_type,
+    const float weights_alpha,
+    const std::vector<float>& weights_vec,
+    const int weights_mode,
+    const bool include_target,
+    const float forward_weight,
+    const float backward_weight,
+    const bool use_fast_path,
+    // Progress tracking
+    std::atomic<long long>& processed_words
+) {
+  // Fast RNG (Linear Congruential Generator like word2vec)
+  unsigned long long next_random = thread_id + 1;
+  
+  // Thread-local gradient accumulator
+  std::vector<float> hidden_errors(n_dims, 0.0f);
+  
+  // Thread-local RNG for weighted sampling
+  std::mt19937 rng(thread_id + 12345);
+  std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
+  
+  long long local_word_count = 0;
+  float alpha = initial_lr;
+  
+  // Process sentences assigned to this thread
+  for (int sent_idx = start_sent; sent_idx < end_sent; ++sent_idx) {
+    const std::vector<int>& sentence = sentences[sent_idx];
+    
+    // Skip-gram training on this sentence
+    for (size_t pos = 0; pos < sentence.size(); ++pos) {
+      int word_idx = sentence[pos];
+      
+      local_word_count++;
+      
+      // Update learning rate every 10000 words
+      if (local_word_count % 10000 == 0) {
+        long long global_word_count = processed_words.load(std::memory_order_relaxed);
+        alpha = initial_lr * (1.0f - static_cast<float>(global_word_count) / total_train_words);
+        if (alpha < initial_lr * 0.0001f) alpha = initial_lr * 0.0001f;
+      }
+      
+      if (use_fast_path) {
+        // Fast path: original word2vec with random window
+        next_random = next_random * 25214903917ULL + 11;
+        int actual_window = (next_random >> 16) % window;
+        
+        for (int a = actual_window; a < window * 2 + 1 - actual_window; ++a) {
+          if (a == window) continue;
+          
+          int c_pos = pos - window + a;
+          if (c_pos < 0 || c_pos >= static_cast<int>(sentence.size())) continue;
+          
+          int context_idx = sentence[c_pos];
+          float* w_vec = word_emb + context_idx * n_dims;
+          std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
+          
+          for (int d = 0; d <= n_neg; ++d) {
+            int target;
+            float label;
+            
+            if (d == 0) {
+              target = word_idx;
+              label = 1.0f;
+            } else {
+              next_random = next_random * 25214903917ULL + 11;
+              target = neg_table[(next_random >> 16) % neg_table_size];
+              if (target == word_idx) continue;
+              label = 0.0f;
+            }
+            
+            float* c_vec = context_emb + target * n_dims;
+            
+            float dot = 0.0f;
+            for (int k = 0; k < n_dims; ++k) {
+              dot += w_vec[k] * c_vec[k];
+            }
+            
+            float pred = fast_sigmoid(dot, exp_table);
+            float grad = (label - pred) * alpha;
+            
+            for (int k = 0; k < n_dims; ++k) {
+              hidden_errors[k] += grad * c_vec[k];
+            }
+            
+            for (int k = 0; k < n_dims; ++k) {
+              c_vec[k] += grad * w_vec[k];
+            }
+          }
+          
+          for (int k = 0; k < n_dims; ++k) {
+            w_vec[k] += hidden_errors[k];
+          }
+        }
+      } else {
+        // Weighted sampling path
+        // Build context sampling weights for this position
+        std::vector<float> context_weights;
+        std::vector<int> context_positions;
+        float total_weight = 0.0f;
+        
+        for (int offset = -window; offset <= window; ++offset) {
+          if (offset == 0 && !include_target) continue;
+          
+          int c_pos = pos + offset;
+          if (c_pos < 0 || c_pos >= static_cast<int>(sentence.size())) continue;
+          
+          // Calculate distance
+          float dist = calculate_distance(pos, c_pos, sentence, type_widths);
+          
+          // Calculate base weight
+          float weight = calculate_weight(dist, static_cast<float>(window), weights_type,
+                                          weights_alpha, weights_vec, weights_mode, 
+                                          include_target, offset);
+          
+          // Apply directional weighting
+          if (offset < 0) weight *= backward_weight;
+          if (offset > 0) weight *= forward_weight;
+          
+          if (weight > 0.0f) {
+            context_weights.push_back(weight);
+            context_positions.push_back(c_pos);
+            total_weight += weight;
+          }
+        }
+        
+        if (context_weights.empty()) continue;
+        
+        // Normalize weights to probabilities
+        for (float& w : context_weights) {
+          w /= total_weight;
+        }
+        
+        // Sample contexts proportional to weights
+        // Number of samples = window (same average as fast path)
+        int n_samples = window;
+        
+        for (int sample = 0; sample < n_samples; ++sample) {
+          // Sample context position
+          float rand_val = uniform_dist(rng);
+          float cumulative = 0.0f;
+          int selected_idx = 0;
+          
+          for (size_t i = 0; i < context_weights.size(); ++i) {
+            cumulative += context_weights[i];
+            if (rand_val < cumulative) {
+              selected_idx = i;
+              break;
+            }
+          }
+          
+          int context_idx = sentence[context_positions[selected_idx]];
+          float* w_vec = word_emb + context_idx * n_dims;
+          std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
+          
+          // Negative sampling
+          for (int d = 0; d <= n_neg; ++d) {
+            int target;
+            float label;
+            
+            if (d == 0) {
+              target = word_idx;
+              label = 1.0f;
+            } else {
+              next_random = next_random * 25214903917ULL + 11;
+              target = neg_table[(next_random >> 16) % neg_table_size];
+              if (target == word_idx) continue;
+              label = 0.0f;
+            }
+            
+            float* c_vec = context_emb + target * n_dims;
+            
+            float dot = 0.0f;
+            for (int k = 0; k < n_dims; ++k) {
+              dot += w_vec[k] * c_vec[k];
+            }
+            
+            float pred = fast_sigmoid(dot, exp_table);
+            float grad = (label - pred) * alpha;
+            
+            for (int k = 0; k < n_dims; ++k) {
+              hidden_errors[k] += grad * c_vec[k];
+            }
+            
+            for (int k = 0; k < n_dims; ++k) {
+              c_vec[k] += grad * w_vec[k];
+            }
+          }
+          
+          for (int k = 0; k < n_dims; ++k) {
+            w_vec[k] += hidden_errors[k];
+          }
+        }
+      }
+    }
+  }
+  
+  // Final update of processed count
+  processed_words.fetch_add(local_word_count, std::memory_order_relaxed);
+}
+
+// [[Rcpp::export]]
+List sgns_streaming_cpp(
+    const List& tokens_list,           // List of character vectors (one per document)
+    const int min_count,                // Minimum word frequency
+    const int vocab_size,               // Maximum vocabulary size (0 = unlimited)
+    const double vocab_coverage,        // Vocabulary coverage threshold
+    const CharacterVector& vocab_keep,  // Words to always keep in vocabulary
+    const NumericVector& type_widths,   // Word widths for distance metric
+    const int n_dims,                   // Embedding dimensionality
+    const int n_neg,                    // Number of negative samples
+    const int window,                   // Context window size
+    const double lr,                    // Initial learning rate
+    const int epochs,                   // Number of training epochs
+    const double context_smoothing,     // Smoothing power for negative sampling
+    const double subsample,             // Subsampling threshold
+    const std::string weights_type,     // "linear", "harmonic", "exponential", "power", "none"
+    const double weights_alpha,         // Alpha parameter for exponential/power
+    const NumericVector& weights_vec,   // Custom weight vector
+    const int weights_mode,             // 0-4 for weight vector indexing
+    const bool include_target,          // Include self-context
+    const double forward_weight,        // Forward context weight
+    const double backward_weight,       // Backward context weight
+    const std::string init_type,        // "uniform" or "normal"
+    const int seed,                     // Random seed
+    const bool verbose,                 // Verbose output
+    const int threads) {                // Number of threads
+
+  int n_threads = threads > 0 ? threads : std::thread::hardware_concurrency();
+  if (n_threads < 1) n_threads = 1;
+  
+  std::mt19937 rng(seed);
+  
+  // Extract types (vocabulary) from tokens object
+  CharacterVector token_types;
+  if (tokens_list.hasAttribute("types")) {
+    token_types = tokens_list.attr("types");
+  } else {
+    Rcpp::stop("tokens object missing 'types' attribute");
+  }
+  
+  // Build vocabulary
+  if (verbose) {
+    Rcpp::Rcout << "Building vocabulary...\n";
+  }
+  
+  std::vector<std::string> index_to_word;
+  std::vector<int> type_to_vocab;  // Maps quanteda type index to vocab index
+  std::vector<long long> word_counts;
+  long long total_words = 0;
+  
+  build_vocab(tokens_list, token_types, min_count, vocab_coverage, vocab_keep,
+              index_to_word, type_to_vocab, word_counts, total_words);
+  
+  // Limit vocabulary size if requested
+  if (vocab_size > 0 && static_cast<int>(index_to_word.size()) > vocab_size) {
+    index_to_word.resize(vocab_size);
+    
+    // Update type_to_vocab mapping: words beyond vocab_size become -1
+    for (size_t i = 0; i < type_to_vocab.size(); ++i) {
+      if (type_to_vocab[i] >= vocab_size) {
+        type_to_vocab[i] = -1;
+      }
+    }
+  }
+  
+  int vocab_len = index_to_word.size();
+  
+  if (verbose) {
+    Rcpp::Rcout << "Vocabulary size: " << vocab_len << " words\n";
+    Rcpp::Rcout << "Total words in corpus: " << total_words << "\n";
+  }
+  
+  // Initialize embeddings
+  int emb_size = vocab_len * n_dims;
+  std::vector<float> word_emb(emb_size);
+  std::vector<float> context_emb(emb_size);
+  
+  if (init_type == "uniform") {
+    std::uniform_real_distribution<float> init_dist(-0.5f / n_dims, 0.5f / n_dims);
+    for (int i = 0; i < emb_size; ++i) {
+      word_emb[i] = init_dist(rng);
+      context_emb[i] = init_dist(rng);
+    }
+  } else if (init_type == "normal") {
+    std::normal_distribution<float> init_dist(0.0f, 0.01f);
+    for (int i = 0; i < emb_size; ++i) {
+      word_emb[i] = init_dist(rng);
+      context_emb[i] = init_dist(rng);
+    }
+  } else {
+    Rcpp::stop("init_type must be 'uniform' or 'normal'");
+  }
+  
+  // Build negative sampling table using word counts from vocabulary
+  double total_weight = 0.0;
+  std::vector<double> smoothed_counts(vocab_len);
+  for (int i = 0; i < vocab_len; ++i) {
+    smoothed_counts[i] = std::pow(static_cast<double>(word_counts[i]), context_smoothing);
+    total_weight += smoothed_counts[i];
+  }
+  
+  // Fixed-size table for fast sampling (word2vec uses 100M but let's try smaller)
+  const int NEG_TABLE_SIZE = 10000000;  // 10M entries (40MB vs 400MB)
+  std::vector<int> neg_table(NEG_TABLE_SIZE);
+  int table_idx = 0;
+  double cumulative = 0.0;
+  for (int i = 0; i < vocab_len && table_idx < NEG_TABLE_SIZE; ++i) {
+    cumulative += smoothed_counts[i] / total_weight;
+    while (table_idx < NEG_TABLE_SIZE && 
+           static_cast<double>(table_idx) / NEG_TABLE_SIZE < cumulative) {
+      neg_table[table_idx++] = i;
+    }
+  }
+  while (table_idx < NEG_TABLE_SIZE) {
+    neg_table[table_idx++] = vocab_len - 1;
+  }
+  
+  // Build exp table
+  std::vector<float> exp_table;
+  build_exp_table(exp_table);
+  
+  if (verbose) {
+    Rcpp::Rcout << "Converting tokens to indices...\n";
+  }
+  
+  // Pre-convert all tokens to vocab indices and apply subsampling
+  std::vector<std::vector<int>> sentences;
+  sentences.reserve(tokens_list.size());
+  
+  std::mt19937 subsample_rng(seed + 999);
+  std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
+  
+  long long tokens_before_subsample = 0;
+  long long tokens_after_subsample = 0;
+  
+  for (int doc = 0; doc < tokens_list.size(); ++doc) {
+    SEXP doc_sexp = tokens_list[doc];
+    if (TYPEOF(doc_sexp) != INTSXP) continue;
+    
+    IntegerVector doc_tokens = as<IntegerVector>(doc_sexp);
+    std::vector<int> sentence;
+    sentence.reserve(doc_tokens.size());
+    
+    for (int i = 0; i < doc_tokens.size(); ++i) {
+      int type_idx = doc_tokens[i] - 1;  // Convert from 1-indexed to 0-indexed
+      if (type_idx < 0 || type_idx >= static_cast<int>(type_to_vocab.size())) continue;
+      
+      int vocab_idx = type_to_vocab[type_idx];
+      if (vocab_idx < 0) continue;  // Not in our vocabulary
+      
+      tokens_before_subsample++;
+      
+      // Subsampling (Mikolov et al. 2013)
+      if (subsample > 0) {
+        float freq = static_cast<float>(word_counts[vocab_idx]) / total_words;
+        float keep_prob = std::sqrt(subsample / freq) + subsample / freq;
+        if (uniform_dist(subsample_rng) > keep_prob) continue;
+      }
+      
+      sentence.push_back(vocab_idx);
+      tokens_after_subsample++;
+    }
+    
+    if (!sentence.empty()) {
+      sentences.push_back(std::move(sentence));
+    }
+  }
+  
+  long long actual_total_words = tokens_after_subsample * epochs;
+  
+  if (verbose) {
+    Rcpp::Rcout << "Tokens after subsampling: " << tokens_after_subsample 
+                << " (" << (100.0 * tokens_after_subsample / tokens_before_subsample) 
+                << "%)\n";
+  }
+  
+  // Convert type_widths to C++ vector
+  std::vector<float> type_widths_vec(type_widths.size());
+  for (int i = 0; i < type_widths.size(); ++i) {
+    type_widths_vec[i] = static_cast<float>(type_widths[i]);
+  }
+  
+  // Convert weights_vec to C++ vector
+  std::vector<float> weights_vec_cpp(weights_vec.size());
+  for (int i = 0; i < weights_vec.size(); ++i) {
+    weights_vec_cpp[i] = static_cast<float>(weights_vec[i]);
+  }
+  
+  // Determine if we can use fast path (original word2vec)
+  bool use_fast_path = (weights_type == "none" && 
+                        weights_mode == 0 &&
+                        !include_target &&
+                        forward_weight == 1.0 &&
+                        backward_weight == 1.0 &&
+                        type_widths_vec.size() > 0 &&
+                        std::all_of(type_widths_vec.begin(), type_widths_vec.end(), 
+                                    [](float w) { return w == 1.0f; }));
+  
+  // Training
+  if (verbose) {
+    Rcpp::Rcout << "Training SGNS with " << n_threads << " threads\n";
+    Rcpp::Rcout << "Total training words: " << actual_total_words << "\n";
+    if (use_fast_path) {
+      Rcpp::Rcout << "Using fast path (standard word2vec)\n";
+    } else {
+      Rcpp::Rcout << "Using weighted sampling\n";
+    }
+  }
+  
+  int n_sentences = sentences.size();
+  
+  for (int epoch = 0; epoch < epochs; ++epoch) {
+    std::atomic<long long> processed_words(epoch * tokens_after_subsample);
+    
+    if (verbose) {
+      Rcpp::Rcout << "Epoch " << (epoch + 1) << "/" << epochs << "\n";
+    }
+    
+    // Divide sentences among threads
+    std::vector<std::thread> threads_vec;
+    int sents_per_thread = (n_sentences + n_threads - 1) / n_threads;
+    
+    for (int t = 0; t < n_threads; ++t) {
+      int start_sent = t * sents_per_thread;
+      int end_sent = std::min(start_sent + sents_per_thread, n_sentences);
+      if (start_sent >= n_sentences) break;
+      
+      threads_vec.emplace_back(
+        sgns_streaming_worker,
+        std::cref(sentences),
+        std::cref(word_counts),
+        std::cref(neg_table),
+        NEG_TABLE_SIZE,
+        std::cref(exp_table),
+        std::cref(type_widths_vec),
+        word_emb.data(),
+        context_emb.data(),
+        n_dims,
+        n_neg,
+        window,
+        static_cast<float>(lr),
+        actual_total_words,
+        t,
+        n_threads,
+        start_sent,
+        end_sent,
+        std::cref(weights_type),
+        static_cast<float>(weights_alpha),
+        std::cref(weights_vec_cpp),
+        weights_mode,
+        include_target,
+        static_cast<float>(forward_weight),
+        static_cast<float>(backward_weight),
+        use_fast_path,
+        std::ref(processed_words)
+      );
+    }
+    
+    // Wait for all threads
+    for (auto& t : threads_vec) {
+      t.join();
+    }
+    
+    if (verbose) {
+      // Calculate final alpha
+      float final_alpha = static_cast<float>(lr) * (1.0f - static_cast<float>(processed_words.load()) / actual_total_words);
+      if (final_alpha < static_cast<float>(lr) * 0.0001f) final_alpha = static_cast<float>(lr) * 0.0001f;
+      Rcpp::Rcout << "  Alpha: " << final_alpha << "\n";
+    }
+    
+    Rcpp::checkUserInterrupt();
+  }
+  
+  // Convert back to R matrices
+  NumericMatrix word_embeddings(vocab_len, n_dims);
+  NumericMatrix context_embeddings(vocab_len, n_dims);
+  CharacterVector vocab_words(vocab_len);
+  
+  for (int i = 0; i < vocab_len; ++i) {
+    vocab_words[i] = index_to_word[i];
+    for (int d = 0; d < n_dims; ++d) {
+      word_embeddings(i, d) = word_emb[i * n_dims + d];
+      context_embeddings(i, d) = context_emb[i * n_dims + d];
+    }
+  }
+  
+  rownames(word_embeddings) = vocab_words;
+  rownames(context_embeddings) = vocab_words;
+  
+  return List::create(
+    Named("word_embeddings") = word_embeddings,
+    Named("context_embeddings") = context_embeddings,
+    Named("vocab") = vocab_words
+  );
+}
+
+// Thread worker function for FCM-based method - processes a range of training examples
 void sgns_thread_worker(
     // Data (shared, read-only)
     const int* word_ids,
@@ -159,7 +840,7 @@ void sgns_thread_worker(
 }
 
 // [[Rcpp::export(rng = false)]]
-List sgns_train_cpp(
+List sgns_from_fcm_cpp(
     const IntegerVector& i_indices,      // 0-indexed row indices
     const IntegerVector& j_indices,      // 0-indexed column indices
     const NumericVector& x_values,       // co-occurrence counts
@@ -169,11 +850,7 @@ List sgns_train_cpp(
     const int n_neg,                     // number of negative samples
     const double lr,                     // initial learning rate
     const int epochs,                    // number of training epochs
-    const int grain_size,                // (unused, kept for API compatibility)
-    const double smoothing,              // smoothing power for neg sampling
-    const bool reject_positives,         // (unused in new impl, rejection is always on)
     const std::string init_type,         // "uniform" or "normal" initialization
-    const bool bootstrap_positive,       // (unused, kept for API compatibility)
     const int seed,                      // random seed
     const bool verbose,                  // verbose output?
     const int threads) {                 // number of threads
@@ -184,43 +861,38 @@ List sgns_train_cpp(
   // Initialize random number generator
   std::mt19937 rng(seed);
   
-  // Use float for embeddings (like word2vec) - faster and sufficient precision
+  // Use float for embeddings (like word2vec)
   int emb_size = n_words * n_dims;
-  int ctx_size = n_contexts * n_dims;
   std::vector<float> word_emb(emb_size);
-  std::vector<float> context_emb(ctx_size);
+  std::vector<float> context_emb(emb_size);  // Same size as word_emb (symmetric)
   
   // Initialize embeddings
   if (init_type == "uniform") {
     std::uniform_real_distribution<float> init_dist(-0.5f / n_dims, 0.5f / n_dims);
     for (int i = 0; i < emb_size; ++i) {
       word_emb[i] = init_dist(rng);
-    }
-    for (int i = 0; i < ctx_size; ++i) {
       context_emb[i] = init_dist(rng);
     }
   } else if (init_type == "normal") {
     std::normal_distribution<float> init_dist(0.0f, 0.01f);
     for (int i = 0; i < emb_size; ++i) {
       word_emb[i] = init_dist(rng);
-    }
-    for (int i = 0; i < ctx_size; ++i) {
       context_emb[i] = init_dist(rng);
     }
   } else {
     Rcpp::stop("init_type must be 'uniform' or 'normal'");
   }
   
-  // Build negative sampling table (unigram distribution raised to 0.75 power)
-  std::vector<double> context_counts(n_contexts, 0.0);
+  // Build negative sampling table from word frequencies (0.75 power like word2vec)
+  std::vector<double> word_counts(n_words, 0.0);
   for (int i = 0; i < x_values.size(); ++i) {
-    context_counts[j_indices[i]] += x_values[i];
+    word_counts[i_indices[i]] += x_values[i];
   }
   
   double total_weight = 0.0;
-  for (int i = 0; i < n_contexts; ++i) {
-    context_counts[i] = std::pow(context_counts[i], smoothing);
-    total_weight += context_counts[i];
+  for (int i = 0; i < n_words; ++i) {
+    word_counts[i] = std::pow(word_counts[i], 0.75);
+    total_weight += word_counts[i];
   }
   
   // Fixed-size table for fast sampling (like word2vec)
@@ -228,8 +900,8 @@ List sgns_train_cpp(
   std::vector<int> neg_table(NEG_TABLE_SIZE);
   int table_idx = 0;
   double cumulative = 0.0;
-  for (int i = 0; i < n_contexts && table_idx < NEG_TABLE_SIZE; ++i) {
-    cumulative += context_counts[i] / total_weight;
+  for (int i = 0; i < n_words && table_idx < NEG_TABLE_SIZE; ++i) {
+    cumulative += word_counts[i] / total_weight;
     while (table_idx < NEG_TABLE_SIZE && 
            static_cast<double>(table_idx) / NEG_TABLE_SIZE < cumulative) {
       neg_table[table_idx++] = i;
@@ -237,87 +909,155 @@ List sgns_train_cpp(
   }
   // Fill remainder with last word
   while (table_idx < NEG_TABLE_SIZE) {
-    neg_table[table_idx++] = n_contexts - 1;
+    neg_table[table_idx++] = n_words - 1;
   }
   
   // Build exp table for fast sigmoid
   std::vector<float> exp_table;
   build_exp_table(exp_table);
   
-  // Prepare training data - expand FCM to training examples
-  // Shuffle once and reuse (shuffling per epoch is expensive)
-  int n_pairs = i_indices.size();
-  std::vector<int> word_ids(n_pairs);
-  std::vector<int> context_ids(n_pairs);
-  std::vector<float> counts(n_pairs);
-  
-  for (int i = 0; i < n_pairs; ++i) {
-    word_ids[i] = i_indices[i];
-    context_ids[i] = j_indices[i];
-    counts[i] = static_cast<float>(x_values[i]);
-  }
-  
-  // Calculate total training words (for learning rate schedule)
+  // Sample training pairs from FCM (stochastic sampling to mimic streaming)
+  // Total samples = sum of counts (rounded)
   long long total_train_words = 0;
-  for (int i = 0; i < n_pairs; ++i) {
-    total_train_words += static_cast<long long>(counts[i] + 0.5f);
+  for (int i = 0; i < x_values.size(); ++i) {
+    total_train_words += static_cast<long long>(x_values[i] + 0.5);
   }
   total_train_words *= epochs;
   
-  if (verbose) {
-    Rcpp::Rcout << "Training SGNS with " << n_threads << " threads\n";
-    Rcpp::Rcout << "Vocabulary: " << n_words << " words, " << n_contexts << " contexts\n";
-    Rcpp::Rcout << "Total training examples: " << total_train_words << "\n";
+  // Build cumulative distribution for sampling pairs
+  int n_pairs = i_indices.size();
+  std::vector<double> pair_weights(n_pairs);
+  for (int i = 0; i < n_pairs; ++i) {
+    pair_weights[i] = x_values[i];
   }
   
-  std::vector<double> loss_history;
+  // Create discrete distribution for sampling
+  std::discrete_distribution<int> pair_sampler(pair_weights.begin(), pair_weights.end());
+  
+  // Sample training pairs
+  long long n_samples = total_train_words / epochs;
+  std::vector<int> sampled_contexts(n_samples);
+  std::vector<int> sampled_words(n_samples);
+  
+  for (long long i = 0; i < n_samples; ++i) {
+    int pair_idx = pair_sampler(rng);
+    sampled_contexts[i] = j_indices[pair_idx];
+    sampled_words[i] = i_indices[pair_idx];
+  }
+  
+  if (verbose) {
+    Rcpp::Rcout << "Training SGNS from FCM with " << n_threads << " threads\n";
+    Rcpp::Rcout << "Vocabulary size: " << n_words << "\n";
+    Rcpp::Rcout << "Total training words: " << total_train_words << "\n";
+  }
   
   for (int epoch = 0; epoch < epochs; ++epoch) {
-    // Shuffle training data
-    std::vector<int> shuffle_idx(n_pairs);
+    // Shuffle sampled pairs each epoch
+    std::vector<int> shuffle_idx(n_samples);
     std::iota(shuffle_idx.begin(), shuffle_idx.end(), 0);
     std::shuffle(shuffle_idx.begin(), shuffle_idx.end(), rng);
     
-    std::vector<int> shuffled_words(n_pairs);
-    std::vector<int> shuffled_contexts(n_pairs);
-    std::vector<float> shuffled_counts(n_pairs);
-    for (int i = 0; i < n_pairs; ++i) {
-      shuffled_words[i] = word_ids[shuffle_idx[i]];
-      shuffled_contexts[i] = context_ids[shuffle_idx[i]];
-      shuffled_counts[i] = counts[shuffle_idx[i]];
+    std::vector<int> shuffled_words(n_samples);
+    std::vector<int> shuffled_contexts(n_samples);
+    for (long long i = 0; i < n_samples; ++i) {
+      shuffled_words[i] = sampled_words[shuffle_idx[i]];
+      shuffled_contexts[i] = sampled_contexts[shuffle_idx[i]];
     }
     
     // Progress tracking
-    std::atomic<long long> processed_count(epoch * (total_train_words / epochs));
+    std::atomic<long long> processed_count(epoch * n_samples);
     std::atomic<float> current_alpha(static_cast<float>(lr));
     
     if (verbose) {
       Rcpp::Rcout << "Epoch " << (epoch + 1) << "/" << epochs << "\n";
     }
     
-    // Launch worker threads
+    // Thread-local RNGs and gradient accumulators
     std::vector<std::thread> threads_vec;
+    long long samples_per_thread = (n_samples + n_threads - 1) / n_threads;
+    
     for (int t = 0; t < n_threads; ++t) {
-      threads_vec.emplace_back(
-        sgns_thread_worker,
-        shuffled_words.data(),
-        shuffled_contexts.data(),
-        shuffled_counts.data(),
-        neg_table.data(),
-        NEG_TABLE_SIZE,
-        std::cref(exp_table),
-        word_emb.data(),
-        context_emb.data(),
-        n_dims,
-        n_neg,
-        static_cast<float>(lr),
-        n_pairs,
-        t,
-        n_threads,
-        std::ref(processed_count),
-        total_train_words,
-        std::ref(current_alpha)
-      );
+      long long start_idx = t * samples_per_thread;
+      long long end_idx = std::min(start_idx + samples_per_thread, n_samples);
+      
+      threads_vec.emplace_back([&, t, start_idx, end_idx]() {
+        // Thread-local RNG using LCG like word2vec
+        unsigned long long next_random = static_cast<unsigned long long>(seed) * (t + 1);
+        
+        std::vector<float> hidden_errors(n_dims, 0.0f);
+        long long local_word_count = 0;
+        float alpha = static_cast<float>(lr);
+        
+        for (long long idx = start_idx; idx < end_idx; ++idx) {
+          int context_word = shuffled_contexts[idx];
+          int target_word = shuffled_words[idx];
+          
+          local_word_count++;
+          
+          // Update learning rate every 10000 words
+          if (local_word_count % 10000 == 0) {
+            long long global_count = processed_count.load(std::memory_order_relaxed);
+            alpha = static_cast<float>(lr) * (1.0f - static_cast<float>(global_count) / total_train_words);
+            if (alpha < static_cast<float>(lr) * 0.0001f) {
+              alpha = static_cast<float>(lr) * 0.0001f;
+            }
+            current_alpha.store(alpha, std::memory_order_relaxed);
+          }
+          
+          // Get context word embedding (this is the input)
+          float* w_vec = word_emb.data() + context_word * n_dims;
+          
+          // Zero hidden errors
+          std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
+          
+          // Negative sampling
+          for (int d = 0; d <= n_neg; ++d) {
+            int target;
+            float label;
+            
+            if (d == 0) {
+              // Positive sample
+              target = target_word;
+              label = 1.0f;
+            } else {
+              // Negative sample
+              next_random = next_random * 25214903917ULL + 11;
+              target = neg_table[(next_random >> 16) % NEG_TABLE_SIZE];
+              if (target == target_word) continue;
+              label = 0.0f;
+            }
+            
+            float* c_vec = context_emb.data() + target * n_dims;
+            
+            // Compute dot product
+            float dot = 0.0f;
+            for (int k = 0; k < n_dims; ++k) {
+              dot += w_vec[k] * c_vec[k];
+            }
+            
+            // Compute gradient
+            float pred = fast_sigmoid(dot, exp_table);
+            float grad = (label - pred) * alpha;
+            
+            // Accumulate gradient for input vector
+            for (int k = 0; k < n_dims; ++k) {
+              hidden_errors[k] += grad * c_vec[k];
+            }
+            
+            // Update output vector
+            for (int k = 0; k < n_dims; ++k) {
+              c_vec[k] += grad * w_vec[k];
+            }
+          }
+          
+          // Apply accumulated gradient to input vector
+          for (int k = 0; k < n_dims; ++k) {
+            w_vec[k] += hidden_errors[k];
+          }
+        }
+        
+        processed_count.fetch_add(local_word_count, std::memory_order_relaxed);
+      });
     }
     
     // Wait for all threads
@@ -331,28 +1071,21 @@ List sgns_train_cpp(
     
     // Check for user interrupt
     Rcpp::checkUserInterrupt();
-    
-    loss_history.push_back(0.0);  // Loss tracking removed for performance
   }
   
   // Convert back to R matrices
   NumericMatrix word_embeddings(n_words, n_dims);
-  NumericMatrix context_embeddings(n_contexts, n_dims);
+  NumericMatrix context_embeddings(n_words, n_dims);
   
   for (int i = 0; i < n_words; ++i) {
     for (int d = 0; d < n_dims; ++d) {
       word_embeddings(i, d) = word_emb[i * n_dims + d];
-    }
-  }
-  for (int i = 0; i < n_contexts; ++i) {
-    for (int d = 0; d < n_dims; ++d) {
       context_embeddings(i, d) = context_emb[i * n_dims + d];
     }
   }
   
   return List::create(
     Named("word_embeddings") = word_embeddings,
-    Named("context_embeddings") = context_embeddings,
-    Named("loss_history") = loss_history
+    Named("context_embeddings") = context_embeddings
   );
 }

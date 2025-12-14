@@ -10,7 +10,14 @@ context_spec(
   weights_args = list(),
   distance_metric = c("words", "characters", "surprisal"),
   direction = "symmetric",
-  include_target = FALSE
+  include_target = FALSE,
+  vocab_size = NULL,
+  vocab_coverage = NULL,
+  vocab_keep = NULL,
+  min_count = 5L,
+  context_smoothing = 0.75,
+  target_smoothing = 1,
+  subsample = 0.001
 )
 }
 \arguments{
@@ -36,6 +43,20 @@ of forward to backward weight.}
 
 \item{include_target}{Logical. If TRUE, the target word is included in the
 context (distance 0).}
+
+\item{vocab_size}{Optional. Limit vocabulary to top N most frequent types.}
+
+\item{vocab_coverage}{Optional. Limit vocabulary to cover this proportion of tokens.}
+
+\item{vocab_keep}{Optional character vector of types to always keep in vocabulary.}
+
+\item{min_count}{Minimum frequency for a word to be included in vocabulary. Default is 5.}
+
+\item{context_smoothing}{Power to raise context frequencies for negative sampling. Default is 0.75.}
+
+\item{target_smoothing}{Power to raise target word frequencies. Default is 1 (no smoothing).}
+
+\item{subsample}{Subsampling threshold for frequent words (Mikolov et al. 2013). Default is 1e-3.}
 }
 \value{
 A \code{context_spec} object containing the context configuration.

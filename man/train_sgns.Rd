@@ -3,6 +3,7 @@
 \name{train_sgns}
 \alias{train_sgns}
 \alias{train_sgns.tokens}
+\alias{train_sgns.Matrix}
 \alias{train_sgns.fcm}
 \title{Train embeddings with Skip-Gram with Negative Sampling}
 \usage{
@@ -11,16 +12,23 @@ train_sgns(x, ...)
 \method{train_sgns}{tokens}(
   x,
   context = context_spec(),
-  vocab_size = NULL,
-  vocab_coverage = NULL,
-  vocab_keep = NULL,
-  min_count = 5,
   n_dims = 100,
   neg = 5,
   lr = 0.05,
   epochs = 5,
-  context_smoothing = 0.75,
-  subsample = 0.001,
+  init = "uniform",
+  seed = NULL,
+  verbose = TRUE,
+  threads = parallel::detectCores(),
+  ...
+)
+
+\method{train_sgns}{Matrix}(
+  x,
+  n_dims = 100,
+  neg = 5,
+  lr = 0.05,
+  epochs = 5,
   init = "uniform",
   seed = NULL,
   verbose = TRUE,
@@ -34,14 +42,7 @@ train_sgns(x, ...)
   neg = 5,
   lr = 0.05,
   epochs = 5,
-  grain_size = 1,
-  context_smoothing = 0.75,
-  target_smoothing = 1,
-  subsample = 0,
-  reject_positives = TRUE,
   init = "uniform",
-  bootstrap_positive = FALSE,
-  output = "word_embeddings",
   seed = NULL,
   verbose = TRUE,
   threads = parallel::detectCores(),
@@ -49,20 +50,12 @@ train_sgns(x, ...)
 )
 }
 \arguments{
-\item{x}{Either a quanteda \code{tokens} object or a feature co-occurrence matrix (FCM).}
+\item{x}{a quanteda \code{\link[quanteda:tokens]{tokens}} object or feature co-occurrence matrix (FCM).}
 
 \item{...}{Additional arguments passed to methods.}
 
-\item{context}{A \link{context_spec} object defining the context window configuration.
-Required for \code{train_sgns.tokens}.}
-
-\item{vocab_size}{Optional. Limit vocabulary to top N most frequent types.}
-
-\item{vocab_coverage}{Optional. Limit vocabulary to cover this proportion of tokens.}
-
-\item{vocab_keep}{Optional character vector of types to keep.}
-
-\item{min_count}{integer. Minimum frequency for a word to be included in vocabulary. Default is 5.}
+\item{context}{A \link{context_spec} object defining the context window configuration
+and vocabulary parameters. Required for \code{train_sgns.tokens}.}
 
 \item{n_dims}{integer. Dimensionality of embeddings.}
 
@@ -71,11 +64,6 @@ Required for \code{train_sgns.tokens}.}
 \item{lr}{numeric. Initial learning rate. Default is 0.05.}
 
 \item{epochs}{integer. Number of passes through the data. Default is 5.}
-
-\item{context_smoothing}{numeric. Power to raise context frequencies for negative
-sampling. Default is 0.75.}
-
-\item{subsample}{numeric. Subsampling threshold for frequent words. Default is 1e-3.}
 
 \item{init}{character. Initialization: "uniform" or "normal". Default is "uniform".}
 
@@ -86,22 +74,13 @@ sampling. Default is 0.75.}
 \item{threads}{integer. Number of threads. Default uses all available cores.}
 }
 \description{
-Generic function for training word embeddings using the Skip-Gram with Negative
+Train word and/or context embeddings using the Skip-Gram with Negative
 Sampling (SGNS) algorithm (Mikolov et al., 2013). Supports both streaming from
-tokens (fast, like word2vec) and training from pre-computed FCMs (consistent
-with other methods in this package).
-}
-\details{
-\strong{Streaming from tokens (\code{train_sgns.tokens})}: Fast implementation that
-processes the text stream directly, similar to word2vec. Requires a \code{context_spec}
-to define the context window.
-
-\strong{Training from FCM (\code{train_sgns.fcm})}: Trains from pre-computed co-occurrence
-counts. Useful when you want to use the same FCM for multiple algorithms or
-apply FCM transformations.
+tokens and training from pre-computed FCMs, though the latter is generally much slower.
 }
 \references{
 Mikolov, T., Sutskever, I., Chen, K., Corrado, G. S., & Dean, J. (2013).
-Distributed representations of words and phrases and their compositionality.
-In Advances in Neural Information Processing Systems (pp. 3111–3119).
+Distributed Representations of Words and Phrases and their Compositionality.
+In C. J. Burges, L. Bottou, M. Welling, Z. Ghahramani, & K. Q. Weinberger (Eds.),
+Advances in Neural Information Processing Systems (Vol. 26). Curran Associates, Inc.
 }

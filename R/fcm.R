@@ -1,60 +1,31 @@
 #' Create a Feature Co-occurrence Matrix
 #'
 #' @param x A quanteda `tokens` object.
-#' @param context Either a [context_spec] object or parameters passed to create one.
-#'   If provided as a `context_spec`, other context-related parameters are ignored.
-#' @param window Size of the context window (in words) on either side of the target word.
-#'   Ignored if `context` is a `context_spec` object.
-#' @param weights Either a string specifying a decay function of distance ("linear", 
-#'   "harmonic", "exponential", "power", or "none") or a numeric vector of weights. 
-#'   Ignored if `context` is a `context_spec` object.
-#' @param weights_args List of arguments for the decay function (e.g. `alpha` for power/exp).
-#'   Ignored if `context` is a `context_spec` object.
-#' @param distance_metric Metric to input to decay function: "words", "characters", 
-#'   "surprisal". Ignored if `context` is a `context_spec` object.
-#' @param direction String ("symmetric", "forward", "backward") or numeric ratio of 
-#'   forward to backward weight. Ignored if `context` is a `context_spec` object.
-#' @param include_target Logical. If TRUE, the target word is included in the context 
-#'   (distance 0). Ignored if `context` is a `context_spec` object.
+#' @param context A [context_spec] object specifying the context window configuration.
 #' @param tri Logical. If TRUE, return only the upper triangle (if symmetric).
-#' @param vocab_size Optional. Limit vocabulary to top N most frequent types.
-#' @param vocab_coverage Optional. Limit vocabulary to cover this proportion of tokens.
-#' @param vocab_keep Optional character vector of types to keep.
 #' @param verbose Logical.
 #' @param threads Integer. Number of threads to use for parallel processing. If NULL (default), uses all available cores.
 #' @export
 fcm <- function(x, 
-                context = NULL,
-                window = 5L,
-                weights = "linear",
-                weights_args = list(),
-                distance_metric = c("words", "characters", "surprisal"),
-                direction = "symmetric",
-                include_target = FALSE,
+                context,
                 tri = FALSE,
-                vocab_size = NULL,
-                vocab_coverage = NULL,
-                vocab_keep = NULL,
                 verbose = FALSE,
                 threads = NULL) {
     
-    # Handle context_spec object
-    if (inherits(context, "context_spec")) {
-      window <- context$window
-      weights <- context$weights
-      weights_args <- context$weights_args
-      distance_metric <- context$distance_metric
-      direction <- context$direction
-      include_target <- context$include_target
-    } else if (!is.null(context)) {
-      stop("context must be a context_spec object or NULL")
+    # Validate and extract from context_spec
+    if (!inherits(context, "context_spec")) {
+      stop("context must be a context_spec object. Use context_spec() to create one.")
     }
     
-    if (!is.character(distance_metric)) {
-      # Already set from context_spec
-    } else {
-      distance_metric <- match.arg(distance_metric)
-    }
+    window <- context$window
+    weights <- context$weights
+    weights_args <- context$weights_args
+    distance_metric <- context$distance_metric
+    direction <- context$direction
+    include_target <- context$include_target
+    vocab_size <- context$vocab_size
+    vocab_coverage <- context$vocab_coverage
+    vocab_keep <- context$vocab_keep
     
     if (!inherits(x, "tokens")) stop("x must be a quanteda tokens object")
     

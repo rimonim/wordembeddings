@@ -4,55 +4,14 @@
 \alias{fcm}
 \title{Create a Feature Co-occurrence Matrix}
 \usage{
-fcm(
-  x,
-  context = NULL,
-  window = 5L,
-  weights = "linear",
-  weights_args = list(),
-  distance_metric = c("words", "characters", "surprisal"),
-  direction = "symmetric",
-  include_target = FALSE,
-  tri = FALSE,
-  vocab_size = NULL,
-  vocab_coverage = NULL,
-  vocab_keep = NULL,
-  verbose = FALSE,
-  threads = NULL
-)
+fcm(x, context, tri = FALSE, verbose = FALSE, threads = NULL)
 }
 \arguments{
 \item{x}{A quanteda \code{tokens} object.}
 
-\item{context}{Either a \link{context_spec} object or parameters passed to create one.
-If provided as a \code{context_spec}, other context-related parameters are ignored.}
-
-\item{window}{Size of the context window (in words) on either side of the target word.
-Ignored if \code{context} is a \code{context_spec} object.}
-
-\item{weights}{Either a string specifying a decay function of distance ("linear",
-"harmonic", "exponential", "power", or "none") or a numeric vector of weights.
-Ignored if \code{context} is a \code{context_spec} object.}
-
-\item{weights_args}{List of arguments for the decay function (e.g. \code{alpha} for power/exp).
-Ignored if \code{context} is a \code{context_spec} object.}
-
-\item{distance_metric}{Metric to input to decay function: "words", "characters",
-"surprisal". Ignored if \code{context} is a \code{context_spec} object.}
-
-\item{direction}{String ("symmetric", "forward", "backward") or numeric ratio of
-forward to backward weight. Ignored if \code{context} is a \code{context_spec} object.}
-
-\item{include_target}{Logical. If TRUE, the target word is included in the context
-(distance 0). Ignored if \code{context} is a \code{context_spec} object.}
+\item{context}{A \link{context_spec} object specifying the context window configuration.}
 
 \item{tri}{Logical. If TRUE, return only the upper triangle (if symmetric).}
-
-\item{vocab_size}{Optional. Limit vocabulary to top N most frequent types.}
-
-\item{vocab_coverage}{Optional. Limit vocabulary to cover this proportion of tokens.}
-
-\item{vocab_keep}{Optional character vector of types to keep.}
 
 \item{verbose}{Logical.}
 

@@ -5,11 +5,11 @@ fcm_cpp <- function(tokens_list, type_widths_r, keep_types_r, window_size, weigh
     .Call(`_wordembeddings_fcm_cpp`, tokens_list, type_widths_r, keep_types_r, window_size, weights_vec_r, weights_mode, include_target, decay_type, decay_param, asymmetric, forward_weight, backward_weight, verbose, n_threads)
 }
 
-sgns_train_cpp <- function(i_indices, j_indices, x_values, n_words, n_contexts, n_dims, n_neg, lr, epochs, grain_size, smoothing, reject_positives, init_type, bootstrap_positive, seed, verbose, threads) {
-    .Call(`_wordembeddings_sgns_train_cpp`, i_indices, j_indices, x_values, n_words, n_contexts, n_dims, n_neg, lr, epochs, grain_size, smoothing, reject_positives, init_type, bootstrap_positive, seed, verbose, threads)
+sgns_streaming_cpp <- function(tokens_list, min_count, vocab_size, vocab_coverage, vocab_keep, type_widths, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, weights_type, weights_alpha, weights_vec, weights_mode, include_target, forward_weight, backward_weight, init_type, seed, verbose, threads) {
+    .Call(`_wordembeddings_sgns_streaming_cpp`, tokens_list, min_count, vocab_size, vocab_coverage, vocab_keep, type_widths, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, weights_type, weights_alpha, weights_vec, weights_mode, include_target, forward_weight, backward_weight, init_type, seed, verbose, threads)
 }
 
-sgns_streaming_cpp <- function(tokens_list, min_count, vocab_size, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, init_type, seed, verbose, threads) {
-    .Call(`_wordembeddings_sgns_streaming_cpp`, tokens_list, min_count, vocab_size, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, init_type, seed, verbose, threads)
+sgns_from_fcm_cpp <- function(i_indices, j_indices, x_values, n_words, n_contexts, n_dims, n_neg, lr, epochs, init_type, seed, verbose, threads) {
+    .Call(`_wordembeddings_sgns_from_fcm_cpp`, i_indices, j_indices, x_values, n_words, n_contexts, n_dims, n_neg, lr, epochs, init_type, seed, verbose, threads)
 }
 
