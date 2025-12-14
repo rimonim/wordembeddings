@@ -710,8 +710,7 @@ List sgns_streaming_cpp(
   
   return List::create(
     Named("word_embeddings") = word_embeddings,
-    Named("context_embeddings") = context_embeddings,
-    Named("vocab") = vocab_words
+    Named("context_embeddings") = context_embeddings
   );
 }
 
