@@ -82,7 +82,7 @@ train_sgns.tokens <- function(
     freqs <- sort(freqs, decreasing = TRUE)
   }
   
-  # Apply vocab filters in order: vocab_size → vocab_coverage → vocab_keep → min_count
+  # Apply vocab filters in order: vocab_size → vocab_coverage → min_count → vocab_keep
   if (!is.null(vocab_size)) {
     limit_types <- head(names(freqs), vocab_size)
     keep_types <- keep_types & (types %in% limit_types)
@@ -97,25 +97,22 @@ train_sgns.tokens <- function(
     keep_types <- keep_types & (types %in% coverage_types)
   }
   
-  if (!is.null(vocab_keep)) {
-    # Force include vocab_keep words (OR condition)
-    keep_types <- keep_types | (types %in% vocab_keep)
-  }
-  
   if (!is.null(min_count) && min_count > 1) {
     # Match types with their frequencies
     m <- match(types, names(freqs))
     type_freqs <- freqs[m]
     type_freqs[is.na(type_freqs)] <- 0
     
-    # Apply min_count filter, but always keep vocab_keep words
+    # Apply min_count filter
     min_count_filter <- type_freqs >= min_count
-    if (!is.null(vocab_keep)) {
-      min_count_filter <- min_count_filter | (types %in% vocab_keep)
-    }
     keep_types <- keep_types & min_count_filter
   }
   
+  if (!is.null(vocab_keep)) {
+    # Force include vocab_keep words (OR condition)
+    keep_types <- keep_types | (types %in% vocab_keep)
+  }
+
   # Get list of types to keep - will pass to C++ to filter vocabulary
   # This ensures C++ uses exactly the same vocabulary as fcm()
   types_to_keep <- types[keep_types]
@@ -190,18 +187,15 @@ train_sgns.tokens <- function(
     }
   }
   
-  # Pass the filtered vocabulary list to C++
-  # C++ will only build vocabulary from these types
-  vocab_keep_vec <- as.character(types_to_keep)
+  # Pass the filtered vocabulary as integer indices to C++
+  # Match types_to_keep to types to get their indices (1-indexed)
+  vocab_indices <- match(types_to_keep, types)
   
   # Call enhanced streaming C++ implementation
-  # Note: vocabulary filtering done in R, passed via vocab_keep
+  # Note: vocabulary filtering done in R, passed as integer indices
   result <- sgns_streaming_cpp(
     tokens_list = x,
-    min_count = 1L,  # Not used - filtering done in R
-    vocab_size = 0L,  # Not used - filtering done in R
-    vocab_coverage = 0.0,  # Not used - filtering done in R
-    vocab_keep = vocab_keep_vec,  # Contains the filtered vocabulary from R
+    vocab = as.integer(vocab_indices),  # 1-indexed type indices to include
     type_widths = type_widths,
     n_dims = as.integer(n_dims),
     n_neg = as.integer(neg),
@@ -222,6 +216,13 @@ train_sgns.tokens <- function(
     verbose = verbose,
     threads = as.integer(threads)
   )
+  
+  # Add vocabulary as row names using the order returned from C++
+  # C++ sorts by frequency, so we need to match that order
+  vocab_order <- result$vocab_indices  # 1-indexed type indices in frequency order
+  vocab_words <- types[vocab_order]
+  rownames(result$word_embeddings) <- vocab_words
+  rownames(result$context_embeddings) <- vocab_words
   
   result
 }

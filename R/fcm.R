@@ -119,7 +119,7 @@ fcm <- function(x,
         freqs <- sort(freqs, decreasing = TRUE)
     }
     
-    # Apply vocab filters in order: vocab_size → vocab_coverage → vocab_keep → min_count
+    # Apply vocab filters in order: vocab_size → vocab_coverage → min_count → vocab_keep
     if (!is.null(vocab_size)) {
         limit_types <- head(names(freqs), vocab_size)
         keep_types <- keep_types & (types %in% limit_types)
@@ -134,25 +134,22 @@ fcm <- function(x,
         keep_types <- keep_types & (types %in% coverage_types)
     }
     
-    if (!is.null(vocab_keep)) {
-        # Force include vocab_keep words (OR condition)
-        keep_types <- keep_types | (types %in% vocab_keep)
-    }
-    
     if (!is.null(min_count) && min_count > 1) {
         # Match types with their frequencies
         m <- match(types, names(freqs))
         type_freqs <- freqs[m]
         type_freqs[is.na(type_freqs)] <- 0
         
-        # Apply min_count filter, but always keep vocab_keep words
+        # Apply min_count filter
         min_count_filter <- type_freqs >= min_count
-        if (!is.null(vocab_keep)) {
-            min_count_filter <- min_count_filter | (types %in% vocab_keep)
-        }
         keep_types <- keep_types & min_count_filter
     }
-    
+        
+    if (!is.null(vocab_keep)) {
+        # Force include vocab_keep words (OR condition)
+        keep_types <- keep_types | (types %in% vocab_keep)
+    }
+
     # 2. Determine Widths
     type_widths <- rep(1.0, n_types)
     if (distance_metric == "characters") {

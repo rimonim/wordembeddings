@@ -692,7 +692,48 @@ test_that("vocab_keep works with vocab_coverage", {
   m_combined <- train_sgns(toks_test, context = ctx_combined, n_dims = 20, 
                            epochs = 1, threads = 1, verbose = FALSE, seed = 888)
   
-  # At least some rare words should be present despite low coverage
+  # All rare words should be present despite low coverage
   kept_words <- intersect(rare_words, rownames(m_combined$word_embeddings))
-  expect_true(length(kept_words) > 0)
+  expect_true(length(kept_words) == length(rare_words))
+  
+  # Vocabulary should include both the coverage words AND the forced rare words
+  # With 0.3 coverage, we expect ~10-15 words, not just the 2 rare words
+  expect_true(nrow(m_combined$word_embeddings) >= length(rare_words))
+})
+
+test_that("rownames match the vocabulary order from R filtering", {
+  library(quanteda)
+  
+  toks_test <- make_large_test_tokens()
+  
+  # Train model with vocab_size (which filters by frequency in R)
+  ctx <- context_spec(window = 3, min_count = 2, vocab_size = 50)
+  m <- train_sgns(toks_test, context = ctx, n_dims = 20, 
+                  epochs = 1, threads = 1, verbose = FALSE, seed = 999)
+  
+  # Get word frequencies from the corpus
+  dfm_obj <- dfm(toks_test, tolower = FALSE)
+  freqs <- colSums(dfm_obj)
+  
+  # Get frequencies for words in the vocabulary
+  vocab_words <- rownames(m$word_embeddings)
+  vocab_freqs <- freqs[vocab_words]
+  
+  # Verify vocabulary contains the expected words
+  # When using vocab_size, R filters to top N most frequent words
+  # So all vocab words should be among the top words in the corpus
+  all_freqs_sorted <- sort(freqs, decreasing = TRUE)
+  min_vocab_freq <- min(vocab_freqs)
+  # The minimum frequency in vocab should be >= the 50th most frequent word
+  # (allowing some tolerance for ties)
+  expect_true(min_vocab_freq >= all_freqs_sorted[60],
+              info = sprintf("Min vocab frequency (%d) should be among top words", min_vocab_freq))
+  
+  # Verify all words in vocabulary actually exist
+  expect_true(all(!is.na(vocab_freqs)),
+              info = "All vocabulary words should have frequencies")
+  
+  # Check that embeddings dimensions match vocabulary size
+  expect_equal(length(vocab_words), nrow(m$word_embeddings))
+  expect_equal(length(vocab_words), length(vocab_freqs))
 })

@@ -37,21 +37,26 @@ inline float fast_sigmoid(float x, const std::vector<float>& exp_table) {
 }
 
 // Build vocabulary from tokens
-// NOTE: Vocabulary filtering (vocab_size, vocab_coverage, min_count) is now done in R
-// This function only counts frequencies and optionally forces inclusion of vocab_keep words
+// NOTE: Vocabulary filtering is done in R - this function just builds indices
 void build_vocab(
     const List& tokens_list,
-    const CharacterVector& token_types,
-    int vocab_size,  // Ignored - filtering done in R
-    int min_count,   // Ignored - filtering done in R
-    double vocab_coverage,  // Ignored - filtering done in R
-    const CharacterVector& vocab_keep,
-    std::vector<std::string>& index_to_word,
+    const IntegerVector& vocab,  // 1-indexed quanteda type indices to include
     std::vector<int>& type_to_vocab,  // Maps quanteda type index to our vocab index
+    std::vector<int>& vocab_indices_out,  // Output: ordered vocab indices (1-indexed)
     std::vector<long long>& word_counts_out,
     long long& total_words
 ) {
-  int n_types = token_types.size();
+  // Get number of types from tokens object
+  int n_types = 0;
+  for (int doc = 0; doc < tokens_list.size(); ++doc) {
+    SEXP doc_sexp = tokens_list[doc];
+    if (TYPEOF(doc_sexp) != INTSXP) continue;
+    IntegerVector doc_tokens = as<IntegerVector>(doc_sexp);
+    for (int i = 0; i < doc_tokens.size(); ++i) {
+      int type_idx = doc_tokens[i] - 1;
+      if (type_idx >= n_types) n_types = type_idx + 1;
+    }
+  }
   
   // Count word frequencies
   std::vector<long long> type_counts(n_types, 0);
@@ -71,52 +76,27 @@ void build_vocab(
     }
   }
   
-  // Build set of allowed words (vocab_keep now contains the complete filtered vocabulary from R)
-  std::set<std::string> allowed_words;
-  for (int i = 0; i < vocab_keep.size(); ++i) {
-    allowed_words.insert(as<std::string>(vocab_keep[i]));
+  // Build set of allowed type indices (vocab contains 1-indexed quanteda type indices)
+  std::set<int> allowed_types;
+  for (int i = 0; i < vocab.size(); ++i) {
+    allowed_types.insert(vocab[i] - 1);  // Convert to 0-indexed
   }
   
-  // Collect only types that are in the allowed vocabulary
-  std::vector<std::tuple<std::string, long long, int>> word_vec;
-  word_vec.reserve(n_types);
-  
-  if (allowed_words.empty()) {
-    // No filtering - use all types that appear
-    for (int i = 0; i < n_types; ++i) {
-      if (type_counts[i] > 0) {
-        std::string word = as<std::string>(token_types[i]);
-        word_vec.push_back({word, type_counts[i], i});
-      }
-    }
-  } else {
-    // Only include types in the allowed vocabulary
-    for (int i = 0; i < n_types; ++i) {
-      std::string word = as<std::string>(token_types[i]);
-      if (allowed_words.count(word) > 0 && type_counts[i] > 0) {
-        word_vec.push_back({word, type_counts[i], i});
-      }
-    }
-  }
-  
-  // Sort by frequency (most frequent first)
-  std::stable_sort(word_vec.begin(), word_vec.end(),
-    [](const auto& a, const auto& b) {
-      return std::get<1>(a) > std::get<1>(b);
-    });
-  
-  // Build mapping from quanteda type index to our vocab index
+  // Build vocabulary in the order provided by R (already filtered and ordered)
+  // No need to sort - R has already done the filtering with vocab_size/coverage/min_count
+  int vocab_len = vocab.size();
+  word_counts_out.resize(vocab_len);
+  vocab_indices_out.resize(vocab_len);
   type_to_vocab.assign(n_types, -1);  // -1 means not in vocab
-  word_counts_out.resize(word_vec.size());
   
-  for (size_t vocab_idx = 0; vocab_idx < word_vec.size(); ++vocab_idx) {
-    const std::string& word = std::get<0>(word_vec[vocab_idx]);
-    long long count = std::get<1>(word_vec[vocab_idx]);
-    int type_idx = std::get<2>(word_vec[vocab_idx]);
+  for (int vocab_idx = 0; vocab_idx < vocab_len; ++vocab_idx) {
+    int type_idx = vocab[vocab_idx] - 1;  // Convert from 1-indexed to 0-indexed
     
-    index_to_word.push_back(word);
-    word_counts_out[vocab_idx] = count;
-    type_to_vocab[type_idx] = vocab_idx;
+    if (type_idx >= 0 && type_idx < n_types) {
+      word_counts_out[vocab_idx] = type_counts[type_idx];
+      type_to_vocab[type_idx] = vocab_idx;
+      vocab_indices_out[vocab_idx] = vocab[vocab_idx];  // Keep as 1-indexed
+    }
   }
 }
 
@@ -410,11 +390,8 @@ void sgns_streaming_worker(
 
 // [[Rcpp::export]]
 List sgns_streaming_cpp(
-    const List& tokens_list,           // List of character vectors (one per document)
-    const int min_count,                // Minimum word frequency
-    const int vocab_size,               // Maximum vocabulary size (0 = unlimited)
-    const double vocab_coverage,        // Vocabulary coverage threshold
-    const CharacterVector& vocab_keep,  // Words to always keep in vocabulary
+    const List& tokens_list,           // List of integer vectors from tokens object (one per document)
+    const IntegerVector& vocab,         // 1-indexed quanteda type indices to include (filtered in R)
     const NumericVector& type_widths,   // Word widths for distance metric
     const int n_dims,                   // Embedding dimensionality
     const int n_neg,                    // Number of negative samples
@@ -440,28 +417,19 @@ List sgns_streaming_cpp(
   
   std::mt19937 rng(seed);
   
-  // Extract types (vocabulary) from tokens object
-  CharacterVector token_types;
-  if (tokens_list.hasAttribute("types")) {
-    token_types = tokens_list.attr("types");
-  } else {
-    Rcpp::stop("tokens object missing 'types' attribute");
-  }
-  
   // Build vocabulary
   if (verbose) {
     Rcpp::Rcout << "Building vocabulary...\n";
   }
   
-  std::vector<std::string> index_to_word;
   std::vector<int> type_to_vocab;  // Maps quanteda type index to vocab index
+  std::vector<int> vocab_indices_ordered;  // Vocab indices in frequency order (1-indexed)
   std::vector<long long> word_counts;
   long long total_words = 0;
   
-  build_vocab(tokens_list, token_types, vocab_size, min_count, vocab_coverage, vocab_keep,
-              index_to_word, type_to_vocab, word_counts, total_words);
+  build_vocab(tokens_list, vocab, type_to_vocab, vocab_indices_ordered, word_counts, total_words);
   
-  int vocab_len = index_to_word.size();
+  int vocab_len = word_counts.size();
   
   if (verbose) {
     Rcpp::Rcout << "Vocabulary size: " << vocab_len << " words\n";
@@ -669,25 +637,21 @@ List sgns_streaming_cpp(
     Rcpp::checkUserInterrupt();
   }
   
-  // Convert back to R matrices
+  // Convert back to R matrices (R will add rownames)
   NumericMatrix word_embeddings(vocab_len, n_dims);
   NumericMatrix context_embeddings(vocab_len, n_dims);
-  CharacterVector vocab_words(vocab_len);
   
   for (int i = 0; i < vocab_len; ++i) {
-    vocab_words[i] = index_to_word[i];
     for (int d = 0; d < n_dims; ++d) {
       word_embeddings(i, d) = word_emb[i * n_dims + d];
       context_embeddings(i, d) = context_emb[i * n_dims + d];
     }
   }
   
-  rownames(word_embeddings) = vocab_words;
-  rownames(context_embeddings) = vocab_words;
-  
   return List::create(
     Named("word_embeddings") = word_embeddings,
-    Named("context_embeddings") = context_embeddings
+    Named("context_embeddings") = context_embeddings,
+    Named("vocab_indices") = vocab_indices_ordered
   );
 }
 
