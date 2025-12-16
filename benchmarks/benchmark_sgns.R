@@ -36,7 +36,7 @@ cat("\nwordembeddings (streaming) results:\n")
 find_nearest(wordembeddings_mod, "red") |> rownames() |> dput()
 
 # Train SGNS model (wordembeddings - streaming with weighted context)
-wordembeddings_mod_weighted <- train_sgns(toks, context = context_spec(window = 5, weights = "linear", vocab_size = 10000), 
+wordembeddings_mod_weighted <- train_sgns(toks, context = context_spec(window = 5, weights = "linear", vocab_size = 10000, clean_distance = TRUE), 
                                           n_dims = 100, neg = 5, epochs = 5, 
                                           threads = 10, verbose = TRUE)
 wordembeddings_mod_weighted <- as.embeddings(wordembeddings_mod_weighted$word_embeddings)
@@ -54,10 +54,10 @@ find_nearest(wordembeddings_mod_fcm, "red") |> rownames() |> dput()
 mb <- microbenchmark(
   # word2vec = word2vec(x = corp, type = "skip-gram", dim = 100, window = 5, 
   #                     negative = 5L, iter = 5, min_count = 5, threads = 10),
-  wordembeddings_streaming = train_sgns(toks, context = ctx, 
+  wordembeddings_streaming = train_sgns(toks, context = context_spec(window = 5, weights = "none", vocab_size = 10000, clean_distance = TRUE), 
                                         n_dims = 100, neg = 5, epochs = 5, 
                                         threads = 10, verbose = FALSE),
-  wordembeddings_streaming_weighted = train_sgns(toks, context = context_spec(window = 5, weights = "linear", vocab_size = 10000), 
+  wordembeddings_streaming_weighted = train_sgns(toks, context = context_spec(window = 5, weights = "linear", vocab_size = 10000, clean_distance = TRUE), 
                                                n_dims = 100, neg = 5, epochs = 5, 
                                                threads = 10, verbose = FALSE),
   wordembeddings_fcm = train_sgns(fcm, n_dims = 100, neg = 5, epochs = 5, 

@@ -17,7 +17,8 @@ context_spec(
   min_count = 1L,
   context_smoothing = 0.75,
   target_smoothing = 1,
-  subsample = 0.001
+  subsample = 0.001,
+  clean_distance = FALSE
 )
 }
 \arguments{
@@ -57,6 +58,11 @@ context (distance 0).}
 \item{target_smoothing}{Power to raise target word frequencies. Default is 1 (no smoothing).}
 
 \item{subsample}{Subsampling threshold for frequent words (Mikolov et al. 2013). Default is 1e-3.}
+
+\item{clean_distance}{Logical. If TRUE, distance is calculated using original token positions
+(before vocab filtering and subsampling). If FALSE (default), distance is calculated using
+only the retained tokens. Clean distance provides more interpretable weighting but may be
+slightly slower when using character-based distance metrics.}
 }
 \value{
 A \code{context_spec} object containing the context configuration.
@@ -76,6 +82,9 @@ ctx <- context_spec(window = 5, direction = 2.0)  # 2:1 forward:backward
 
 # Custom weight vector
 ctx <- context_spec(window = 3, weights = c(0.5, 0.8, 1.0))
+
+# Clean distance for interpretable weighting
+ctx <- context_spec(window = 5, weights = "linear", clean_distance = TRUE)
 
 # Use with FCM
 fcm_mat <- fcm(tokens, context = ctx)

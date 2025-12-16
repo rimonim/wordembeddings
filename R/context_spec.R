@@ -29,6 +29,10 @@
 #' @param context_smoothing Power to raise context frequencies for negative sampling. Default is 0.75.
 #' @param target_smoothing Power to raise target word frequencies. Default is 1 (no smoothing).
 #' @param subsample Subsampling threshold for frequent words (Mikolov et al. 2013). Default is 1e-3.
+#' @param clean_distance Logical. If TRUE (default), distance is calculated using original token positions 
+#'   (before vocab filtering and subsampling). If FALSE, distance is calculated using 
+#'   only the retained tokens. Clean distance provides more interpretable weighting but may be 
+#'   slightly slower when using character-based distance metrics.
 #'
 #' @return A `context_spec` object containing the context configuration.
 #'
@@ -42,6 +46,9 @@
 #' 
 #' # Custom weight vector
 #' ctx <- context_spec(window = 3, weights = c(0.5, 0.8, 1.0))
+#' 
+#' # Clean distance for interpretable weighting
+#' ctx <- context_spec(window = 5, weights = "linear", clean_distance = TRUE)
 #' 
 #' # Use with FCM
 #' fcm_mat <- fcm(tokens, context = ctx)
@@ -61,7 +68,8 @@ context_spec <- function(
   min_count = 1L,
   context_smoothing = 0.75,
   target_smoothing = 1.0,
-  subsample = 1e-3
+  subsample = 1e-3,
+  clean_distance = TRUE
 ) {
   
   distance_metric <- match.arg(distance_metric)
@@ -103,7 +111,8 @@ context_spec <- function(
       min_count = as.integer(min_count),
       context_smoothing = context_smoothing,
       target_smoothing = target_smoothing,
-      subsample = subsample
+      subsample = subsample,
+      clean_distance = as.logical(clean_distance)
     ),
     class = "context_spec"
   )
@@ -119,5 +128,6 @@ print.context_spec <- function(x, ...) {
               if(is.character(x$direction)) x$direction else sprintf("%.2f:1", x$direction)))
   cat(sprintf("  Distance metric: %s\n", x$distance_metric))
   cat(sprintf("  Include target: %s\n", x$include_target))
+  cat(sprintf("  Clean distance: %s\n", x$clean_distance))
   invisible(x)
 }

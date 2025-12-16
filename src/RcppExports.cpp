@@ -35,8 +35,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // sgns_streaming_cpp
-List sgns_streaming_cpp(const List& tokens_list, const IntegerVector& vocab, const NumericVector& type_widths, const int n_dims, const int n_neg, const int window, const double lr, const int epochs, const double context_smoothing, const double subsample, const std::string weights_type, const double weights_alpha, const NumericVector& weights_vec, const int weights_mode, const bool include_target, const double forward_weight, const double backward_weight, const std::string init_type, const int seed, const bool verbose, const int threads);
-RcppExport SEXP _wordembeddings_sgns_streaming_cpp(SEXP tokens_listSEXP, SEXP vocabSEXP, SEXP type_widthsSEXP, SEXP n_dimsSEXP, SEXP n_negSEXP, SEXP windowSEXP, SEXP lrSEXP, SEXP epochsSEXP, SEXP context_smoothingSEXP, SEXP subsampleSEXP, SEXP weights_typeSEXP, SEXP weights_alphaSEXP, SEXP weights_vecSEXP, SEXP weights_modeSEXP, SEXP include_targetSEXP, SEXP forward_weightSEXP, SEXP backward_weightSEXP, SEXP init_typeSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP threadsSEXP) {
+List sgns_streaming_cpp(const List& tokens_list, const IntegerVector& vocab, const NumericVector& type_widths, const int n_dims, const int n_neg, const int window, const double lr, const int epochs, const double context_smoothing, const double subsample, const std::string weights_type, const double weights_alpha, const NumericVector& weights_vec, const int weights_mode, const bool include_target, const double forward_weight, const double backward_weight, const bool clean_distance, const std::string init_type, const int seed, const bool verbose, const int threads);
+RcppExport SEXP _wordembeddings_sgns_streaming_cpp(SEXP tokens_listSEXP, SEXP vocabSEXP, SEXP type_widthsSEXP, SEXP n_dimsSEXP, SEXP n_negSEXP, SEXP windowSEXP, SEXP lrSEXP, SEXP epochsSEXP, SEXP context_smoothingSEXP, SEXP subsampleSEXP, SEXP weights_typeSEXP, SEXP weights_alphaSEXP, SEXP weights_vecSEXP, SEXP weights_modeSEXP, SEXP include_targetSEXP, SEXP forward_weightSEXP, SEXP backward_weightSEXP, SEXP clean_distanceSEXP, SEXP init_typeSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP threadsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -57,11 +57,12 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const bool >::type include_target(include_targetSEXP);
     Rcpp::traits::input_parameter< const double >::type forward_weight(forward_weightSEXP);
     Rcpp::traits::input_parameter< const double >::type backward_weight(backward_weightSEXP);
+    Rcpp::traits::input_parameter< const bool >::type clean_distance(clean_distanceSEXP);
     Rcpp::traits::input_parameter< const std::string >::type init_type(init_typeSEXP);
     Rcpp::traits::input_parameter< const int >::type seed(seedSEXP);
     Rcpp::traits::input_parameter< const bool >::type verbose(verboseSEXP);
     Rcpp::traits::input_parameter< const int >::type threads(threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(sgns_streaming_cpp(tokens_list, vocab, type_widths, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, weights_type, weights_alpha, weights_vec, weights_mode, include_target, forward_weight, backward_weight, init_type, seed, verbose, threads));
+    rcpp_result_gen = Rcpp::wrap(sgns_streaming_cpp(tokens_list, vocab, type_widths, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, weights_type, weights_alpha, weights_vec, weights_mode, include_target, forward_weight, backward_weight, clean_distance, init_type, seed, verbose, threads));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -90,7 +91,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_wordembeddings_fcm_cpp", (DL_FUNC) &_wordembeddings_fcm_cpp, 14},
-    {"_wordembeddings_sgns_streaming_cpp", (DL_FUNC) &_wordembeddings_sgns_streaming_cpp, 21},
+    {"_wordembeddings_sgns_streaming_cpp", (DL_FUNC) &_wordembeddings_sgns_streaming_cpp, 22},
     {"_wordembeddings_sgns_from_fcm_cpp", (DL_FUNC) &_wordembeddings_sgns_from_fcm_cpp, 13},
     {NULL, NULL, 0}
 };

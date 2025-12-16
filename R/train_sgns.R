@@ -68,6 +68,7 @@ train_sgns.tokens <- function(
   distance_metric <- context$distance_metric
   direction <- context$direction
   include_target <- context$include_target
+  clean_distance <- context$clean_distance
   
   # Apply vocabulary filtering in R (matching fcm() logic exactly)
   types <- quanteda::types(x)
@@ -211,6 +212,7 @@ train_sgns.tokens <- function(
     include_target = include_target,
     forward_weight = forward_weight,
     backward_weight = backward_weight,
+    clean_distance = clean_distance,
     init_type = init,
     seed = as.integer(seed),
     verbose = verbose,

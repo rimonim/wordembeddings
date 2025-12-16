@@ -13,6 +13,12 @@
 
 using namespace Rcpp;
 
+// Token structure for storing vocab index and original position
+struct Token {
+  int vocab_idx;      // Index in vocabulary (0-indexed)
+  int original_pos;   // Position in original document before filtering
+};
+
 // Constants for sigmoid lookup table
 constexpr int EXP_TABLE_SIZE = 1000;
 constexpr float MAX_EXP = 6.0f;
@@ -141,9 +147,48 @@ inline float calculate_weight(float dist, float window, const std::string& type,
   }
 }
 
-// Calculate distance between positions using type widths
-inline float calculate_distance(int pos1, int pos2, const std::vector<int>& sentence,
-                                const std::vector<float>& type_widths) {
+// Distance calculation functions for different modes
+
+// Clean distance: use original positions (word count)
+inline float calculate_distance_clean_words(int pos1, int pos2, 
+                                            const std::vector<Token>& sentence) {
+  return static_cast<float>(std::abs(sentence[pos2].original_pos - sentence[pos1].original_pos));
+}
+
+// Dirty distance: count retained tokens only
+inline float calculate_distance_dirty_words(int pos1, int pos2) {
+  return static_cast<float>(std::abs(pos2 - pos1));
+}
+
+// Clean distance with type widths: sum widths in original document
+inline float calculate_distance_clean_with_widths(int pos1, int pos2,
+                                                   const std::vector<Token>& sentence,
+                                                   const IntegerVector& original_tokens,
+                                                   const std::vector<float>& type_widths,
+                                                   int doc_start_pos) {
+  int orig_pos1 = sentence[pos1].original_pos;
+  int orig_pos2 = sentence[pos2].original_pos;
+  
+  int start = std::min(orig_pos1, orig_pos2);
+  int end = std::max(orig_pos1, orig_pos2);
+  
+  float dist = 0.0f;
+  for (int i = start; i < end; ++i) {
+    int type_idx = original_tokens[doc_start_pos + i] - 1;  // Convert from 1-indexed
+    if (type_idx >= 0 && type_idx < static_cast<int>(type_widths.size())) {
+      dist += type_widths[type_idx];
+    } else {
+      dist += 1.0f;
+    }
+  }
+  return dist;
+}
+
+// Dirty distance with type widths: sum widths of retained tokens
+inline float calculate_distance_dirty_with_widths(int pos1, int pos2,
+                                                   const std::vector<Token>& sentence,
+                                                   const std::vector<int>& vocab_to_type,
+                                                   const std::vector<float>& type_widths) {
   if (pos1 == pos2) return 0.0f;
   
   int start = std::min(pos1, pos2);
@@ -154,9 +199,14 @@ inline float calculate_distance(int pos1, int pos2, const std::vector<int>& sent
     if (i == start) {
       dist = 1.0f;
     } else {
-      int token_idx = sentence[i];
-      if (token_idx >= 0 && token_idx < static_cast<int>(type_widths.size())) {
-        dist += type_widths[token_idx];
+      int vocab_idx = sentence[i].vocab_idx;
+      if (vocab_idx >= 0 && vocab_idx < static_cast<int>(vocab_to_type.size())) {
+        int type_idx = vocab_to_type[vocab_idx];
+        if (type_idx >= 0 && type_idx < static_cast<int>(type_widths.size())) {
+          dist += type_widths[type_idx];
+        } else {
+          dist += 1.0f;
+        }
       } else {
         dist += 1.0f;
       }
@@ -168,12 +218,15 @@ inline float calculate_distance(int pos1, int pos2, const std::vector<int>& sent
 // Thread worker for streaming SGNS (word2vec style)
 void sgns_streaming_worker(
     // Data (shared, read-only)
-    const std::vector<std::vector<int>>& sentences,  // Pre-converted to indices
+    const std::vector<std::vector<Token>>& sentences,  // Tokens with positions
     const std::vector<long long>& word_counts,
     const std::vector<int>& neg_table,
     const int neg_table_size,
     const std::vector<float>& exp_table,
     const std::vector<float>& type_widths,
+    const std::vector<int>& vocab_to_type,
+    const std::vector<IntegerVector>& original_docs,
+    const std::vector<int>& doc_start_positions,
     // Embeddings (shared, read-write)
     float* word_emb,
     float* context_emb,
@@ -196,6 +249,8 @@ void sgns_streaming_worker(
     const float forward_weight,
     const float backward_weight,
     const bool use_fast_path,
+    const bool use_words_metric,
+    const bool use_clean_distance,
     // Progress tracking
     std::atomic<long long>& processed_words
 ) {
@@ -214,11 +269,22 @@ void sgns_streaming_worker(
   
   // Process sentences assigned to this thread
   for (int sent_idx = start_sent; sent_idx < end_sent; ++sent_idx) {
-    const std::vector<int>& sentence = sentences[sent_idx];
+    const std::vector<Token>& sentence = sentences[sent_idx];
+    
+    // Find doc_start_pos for clean distance with type widths
+    int doc_start_pos = -1;
+    if (!use_words_metric && use_clean_distance && !original_docs.empty()) {
+      // Binary search for the document containing this sentence
+      auto it = std::upper_bound(doc_start_positions.begin(), doc_start_positions.end(), sent_idx);
+      if (it != doc_start_positions.begin()) {
+        --it;
+        doc_start_pos = std::distance(doc_start_positions.begin(), it);
+      }
+    }
     
     // Skip-gram training on this sentence
     for (size_t pos = 0; pos < sentence.size(); ++pos) {
-      int word_idx = sentence[pos];
+      int word_idx = sentence[pos].vocab_idx;
       
       local_word_count++;
       
@@ -240,7 +306,7 @@ void sgns_streaming_worker(
           int c_pos = pos - window + a;
           if (c_pos < 0 || c_pos >= static_cast<int>(sentence.size())) continue;
           
-          int context_idx = sentence[c_pos];
+          int context_idx = sentence[c_pos].vocab_idx;
           float* w_vec = word_emb + context_idx * n_dims;
           std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
           
@@ -294,8 +360,28 @@ void sgns_streaming_worker(
           int c_pos = pos + offset;
           if (c_pos < 0 || c_pos >= static_cast<int>(sentence.size())) continue;
           
-          // Calculate distance
-          float dist = calculate_distance(pos, c_pos, sentence, type_widths);
+          // Calculate distance based on metric and mode
+          float dist;
+          if (use_words_metric) {
+            if (use_clean_distance) {
+              dist = calculate_distance_clean_words(pos, c_pos, sentence);
+            } else {
+              dist = calculate_distance_dirty_words(pos, c_pos);
+            }
+          } else {
+            if (use_clean_distance) {
+              if (doc_start_pos >= 0 && doc_start_pos < static_cast<int>(original_docs.size())) {
+                dist = calculate_distance_clean_with_widths(pos, c_pos, sentence,
+                                                            original_docs[doc_start_pos],
+                                                            type_widths, 0);
+              } else {
+                dist = calculate_distance_clean_words(pos, c_pos, sentence);
+              }
+            } else {
+              dist = calculate_distance_dirty_with_widths(pos, c_pos, sentence,
+                                                          vocab_to_type, type_widths);
+            }
+          }
           
           // Calculate base weight
           float weight = calculate_weight(dist, static_cast<float>(window), weights_type,
@@ -338,7 +424,7 @@ void sgns_streaming_worker(
             }
           }
           
-          int context_idx = sentence[context_positions[selected_idx]];
+          int context_idx = sentence[context_positions[selected_idx]].vocab_idx;
           float* w_vec = word_emb + context_idx * n_dims;
           std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
           
@@ -407,6 +493,7 @@ List sgns_streaming_cpp(
     const bool include_target,          // Include self-context
     const double forward_weight,        // Forward context weight
     const double backward_weight,       // Backward context weight
+    const bool clean_distance,          // Use original positions (clean) vs filtered positions (dirty)
     const std::string init_type,        // "uniform" or "normal"
     const int seed,                     // Random seed
     const bool verbose,                 // Verbose output
@@ -485,12 +572,41 @@ List sgns_streaming_cpp(
   std::vector<float> exp_table;
   build_exp_table(exp_table);
   
+  // Convert type_widths to C++ vector
+  std::vector<float> type_widths_vec(type_widths.size());
+  for (int i = 0; i < type_widths.size(); ++i) {
+    type_widths_vec[i] = static_cast<float>(type_widths[i]);
+  }
+  
+  // Determine if we're using words metric (all widths = 1.0)
+  bool use_words_metric = (type_widths.size() == 0 || 
+                          std::all_of(type_widths_vec.begin(), type_widths_vec.end(), 
+                                     [](float w) { return w == 1.0f; }));
+  
+  // For clean distance with character metric, store original tokens per document
+  std::vector<IntegerVector> original_docs;
+  std::vector<int> doc_start_positions;
+  
+  if (!use_words_metric && clean_distance) {
+    original_docs.reserve(tokens_list.size());
+    doc_start_positions.reserve(tokens_list.size());
+  }
+  
+  // For dirty distance with character metric, need vocab_to_type mapping
+  std::vector<int> vocab_to_type;
+  if (!use_words_metric && !clean_distance) {
+    vocab_to_type.resize(vocab_len);
+    for (int i = 0; i < vocab_len; ++i) {
+      vocab_to_type[i] = vocab_indices_ordered[i] - 1;  // Convert to 0-indexed type
+    }
+  }
+  
   if (verbose) {
     Rcpp::Rcout << "Converting tokens to indices...\n";
   }
   
-  // Pre-convert all tokens to vocab indices and apply subsampling
-  std::vector<std::vector<int>> sentences;
+  // Pre-convert all tokens to Token structs with vocab indices and original positions
+  std::vector<std::vector<Token>> sentences;
   sentences.reserve(tokens_list.size());
   
   std::mt19937 subsample_rng(seed + 999);
@@ -504,7 +620,14 @@ List sgns_streaming_cpp(
     if (TYPEOF(doc_sexp) != INTSXP) continue;
     
     IntegerVector doc_tokens = as<IntegerVector>(doc_sexp);
-    std::vector<int> sentence;
+    
+    // Store original document for clean distance with character metric
+    if (!use_words_metric && clean_distance) {
+      original_docs.push_back(doc_tokens);
+      doc_start_positions.push_back(sentences.size());
+    }
+    
+    std::vector<Token> sentence;
     sentence.reserve(doc_tokens.size());
     
     for (int i = 0; i < doc_tokens.size(); ++i) {
@@ -523,7 +646,7 @@ List sgns_streaming_cpp(
         if (uniform_dist(subsample_rng) > keep_prob) continue;
       }
       
-      sentence.push_back(vocab_idx);
+      sentence.push_back({vocab_idx, i});  // Store both vocab index and original position
       tokens_after_subsample++;
     }
     
@@ -540,12 +663,6 @@ List sgns_streaming_cpp(
                 << "%)\n";
   }
   
-  // Convert type_widths to C++ vector
-  std::vector<float> type_widths_vec(type_widths.size());
-  for (int i = 0; i < type_widths.size(); ++i) {
-    type_widths_vec[i] = static_cast<float>(type_widths[i]);
-  }
-  
   // Convert weights_vec to C++ vector
   std::vector<float> weights_vec_cpp(weights_vec.size());
   for (int i = 0; i < weights_vec.size(); ++i) {
@@ -553,14 +670,13 @@ List sgns_streaming_cpp(
   }
   
   // Determine if we can use fast path (original word2vec)
+  // Note: Fast path doesn't check distance, so clean vs dirty doesn't matter
   bool use_fast_path = (weights_type == "none" && 
                         weights_mode == 0 &&
                         !include_target &&
                         forward_weight == 1.0 &&
                         backward_weight == 1.0 &&
-                        type_widths_vec.size() > 0 &&
-                        std::all_of(type_widths_vec.begin(), type_widths_vec.end(), 
-                                    [](float w) { return w == 1.0f; }));
+                        use_words_metric);
   
   // Training
   if (verbose) {
@@ -570,6 +686,11 @@ List sgns_streaming_cpp(
       Rcpp::Rcout << "Using fast path (standard word2vec)\n";
     } else {
       Rcpp::Rcout << "Using weighted sampling\n";
+      if (clean_distance) {
+        Rcpp::Rcout << "Using clean distance (original token positions)\n";
+      } else {
+        Rcpp::Rcout << "Using dirty distance (filtered token positions)\n";
+      }
     }
   }
   
@@ -599,6 +720,9 @@ List sgns_streaming_cpp(
         NEG_TABLE_SIZE,
         std::cref(exp_table),
         std::cref(type_widths_vec),
+        std::cref(vocab_to_type),
+        std::cref(original_docs),
+        std::cref(doc_start_positions),
         word_emb.data(),
         context_emb.data(),
         n_dims,
@@ -618,6 +742,8 @@ List sgns_streaming_cpp(
         static_cast<float>(forward_weight),
         static_cast<float>(backward_weight),
         use_fast_path,
+        use_words_metric,
+        clean_distance,
         std::ref(processed_words)
       );
     }
