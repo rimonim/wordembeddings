@@ -1,9 +1,8 @@
 library(testthat)
-library(quanteda)
 
 # Setup: Create test data
 make_test_tokens <- function() {
-  tokens(
+  quanteda::tokens(
     c("the quick brown fox jumps",
       "the lazy brown dog",
       "quick fox jumps high"),
@@ -12,7 +11,7 @@ make_test_tokens <- function() {
 }
 
 make_large_test_tokens <- function() {
-  tokens(quanteda.corpora::data_corpus_sotu[1:25], what = "word", remove_punct = TRUE)
+  quanteda::tokens(quanteda.corpora::data_corpus_sotu[1:25], what = "word", remove_punct = TRUE)
 }
 
 make_test_fcm <- function() {
@@ -109,8 +108,6 @@ test_that("train_sgns init parameter works", {
 })
 
 test_that("Include target parameter works", {
-  library(quanteda)
-  
   toks_test <- make_large_test_tokens()
   
   # With and without target inclusion
@@ -225,7 +222,7 @@ test_that("train_sgns.tokens with backward direction", {
 test_that("train_sgns.tokens equivalence: FCM vs streaming with linear weights", {
   skip("Integration test - enable to verify FCM/streaming equivalence")
   
-  toks <- tokens(
+  toks <- quanteda::tokens(
     c("the quick brown fox jumps over the lazy dog",
       "the brown dog is lazy",
       "quick fox jumps high over the fence"),
@@ -452,7 +449,7 @@ test_that("train_sgns.tokens reproducibility with seed", {
 })
 
 test_that("train_sgns.fcm preserves rownames", {
-  toks <- tokens(
+  toks <- quanteda::tokens(
     c("the quick brown fox", "the lazy dog"),
     remove_punct = TRUE
   )
@@ -471,7 +468,7 @@ test_that("train_sgns.fcm preserves rownames", {
 })
 
 test_that("train_sgns.fcm works with different FCM input formats", {
-  toks <- tokens(
+  toks <- quanteda::tokens(
     c("the quick brown fox", "the lazy dog"),
     remove_punct = TRUE
   )
@@ -511,7 +508,7 @@ test_that("train_sgns.fcm works with different FCM input formats", {
 test_that("train_sgns runs with multiple threads", {
   skip_on_cran()
   
-  toks <- tokens(
+  toks <- quanteda::tokens(
     c("the quick brown fox", "the lazy dog", "quick fox"),
     remove_punct = TRUE
   )
