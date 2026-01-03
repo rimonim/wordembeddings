@@ -18,7 +18,7 @@ context_spec(
   context_smoothing = 0.75,
   target_smoothing = 1,
   subsample = 0.001,
-  clean_distance = FALSE
+  clean_distance = TRUE
 )
 }
 \arguments{
@@ -59,8 +59,8 @@ context (distance 0).}
 
 \item{subsample}{Subsampling threshold for frequent words (Mikolov et al. 2013). Default is 1e-3.}
 
-\item{clean_distance}{Logical. If TRUE, distance is calculated using original token positions
-(before vocab filtering and subsampling). If FALSE (default), distance is calculated using
+\item{clean_distance}{Logical. If TRUE (default), distance is calculated using original token positions
+(before vocab filtering and subsampling). If FALSE, distance is calculated using
 only the retained tokens. Clean distance provides more interpretable weighting but may be
 slightly slower when using character-based distance metrics.}
 }

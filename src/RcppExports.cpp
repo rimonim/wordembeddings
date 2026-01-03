@@ -34,6 +34,37 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// glove_fit_cpp
+List glove_fit_cpp(const IntegerVector& i_indices, const IntegerVector& j_indices, const NumericVector& x_values, const int n_rows, const int n_cols, const int n_dims, const double x_max, const double alpha, const double lr, const int epochs, const std::string& weight_type_str, const bool fix_bias, const NumericVector& row_sums, const NumericVector& col_sums, const std::string& init_type, const int seed, const bool verbose, const bool shuffle, const int threads, const bool include_word_embeddings, const bool include_context_embeddings);
+RcppExport SEXP _wordembeddings_glove_fit_cpp(SEXP i_indicesSEXP, SEXP j_indicesSEXP, SEXP x_valuesSEXP, SEXP n_rowsSEXP, SEXP n_colsSEXP, SEXP n_dimsSEXP, SEXP x_maxSEXP, SEXP alphaSEXP, SEXP lrSEXP, SEXP epochsSEXP, SEXP weight_type_strSEXP, SEXP fix_biasSEXP, SEXP row_sumsSEXP, SEXP col_sumsSEXP, SEXP init_typeSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP shuffleSEXP, SEXP threadsSEXP, SEXP include_word_embeddingsSEXP, SEXP include_context_embeddingsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const IntegerVector& >::type i_indices(i_indicesSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type j_indices(j_indicesSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type x_values(x_valuesSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_rows(n_rowsSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_cols(n_colsSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_dims(n_dimsSEXP);
+    Rcpp::traits::input_parameter< const double >::type x_max(x_maxSEXP);
+    Rcpp::traits::input_parameter< const double >::type alpha(alphaSEXP);
+    Rcpp::traits::input_parameter< const double >::type lr(lrSEXP);
+    Rcpp::traits::input_parameter< const int >::type epochs(epochsSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type weight_type_str(weight_type_strSEXP);
+    Rcpp::traits::input_parameter< const bool >::type fix_bias(fix_biasSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type row_sums(row_sumsSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type col_sums(col_sumsSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type init_type(init_typeSEXP);
+    Rcpp::traits::input_parameter< const int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< const bool >::type verbose(verboseSEXP);
+    Rcpp::traits::input_parameter< const bool >::type shuffle(shuffleSEXP);
+    Rcpp::traits::input_parameter< const int >::type threads(threadsSEXP);
+    Rcpp::traits::input_parameter< const bool >::type include_word_embeddings(include_word_embeddingsSEXP);
+    Rcpp::traits::input_parameter< const bool >::type include_context_embeddings(include_context_embeddingsSEXP);
+    rcpp_result_gen = Rcpp::wrap(glove_fit_cpp(i_indices, j_indices, x_values, n_rows, n_cols, n_dims, x_max, alpha, lr, epochs, weight_type_str, fix_bias, row_sums, col_sums, init_type, seed, verbose, shuffle, threads, include_word_embeddings, include_context_embeddings));
+    return rcpp_result_gen;
+END_RCPP
+}
 // sgns_streaming_cpp
 List sgns_streaming_cpp(const List& tokens_list, const IntegerVector& vocab, const NumericVector& type_widths, const int n_dims, const int n_neg, const int window, const double lr, const int epochs, const double context_smoothing, const double subsample, const std::string weights_type, const double weights_alpha, const NumericVector& weights_vec, const int weights_mode, const bool include_target, const double forward_weight, const double backward_weight, const bool clean_distance, const std::string init_type, const int seed, const bool verbose, const int threads);
 RcppExport SEXP _wordembeddings_sgns_streaming_cpp(SEXP tokens_listSEXP, SEXP vocabSEXP, SEXP type_widthsSEXP, SEXP n_dimsSEXP, SEXP n_negSEXP, SEXP windowSEXP, SEXP lrSEXP, SEXP epochsSEXP, SEXP context_smoothingSEXP, SEXP subsampleSEXP, SEXP weights_typeSEXP, SEXP weights_alphaSEXP, SEXP weights_vecSEXP, SEXP weights_modeSEXP, SEXP include_targetSEXP, SEXP forward_weightSEXP, SEXP backward_weightSEXP, SEXP clean_distanceSEXP, SEXP init_typeSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP threadsSEXP) {
@@ -91,6 +122,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_wordembeddings_fcm_cpp", (DL_FUNC) &_wordembeddings_fcm_cpp, 14},
+    {"_wordembeddings_glove_fit_cpp", (DL_FUNC) &_wordembeddings_glove_fit_cpp, 21},
     {"_wordembeddings_sgns_streaming_cpp", (DL_FUNC) &_wordembeddings_sgns_streaming_cpp, 22},
     {"_wordembeddings_sgns_from_fcm_cpp", (DL_FUNC) &_wordembeddings_sgns_from_fcm_cpp, 13},
     {NULL, NULL, 0}

@@ -5,7 +5,15 @@
 \alias{train_svd_context}
 \title{Train embeddings with SVD}
 \usage{
-train_svd(fcm, n_dims = 100, eig = 0, output = "word_embeddings")
+train_svd(
+  fcm,
+  n_dims = 100,
+  eig = 0,
+  row_weights = NULL,
+  col_weights = NULL,
+  output = "word_embeddings",
+  opts = list()
+)
 
 train_svd_context(fcm, n_dims = 100, eig = 0)
 }
@@ -19,9 +27,15 @@ array-like object}
 Caron (2001). The default, \code{0}, corresponds to ignoring the eigenvalues
 entirely.}
 
+\item{row_weights}{numeric vector. Optional weights for the rows of \code{fcm}.}
+
+\item{col_weights}{numeric vector. Optional weights for the columns of \code{fcm}.}
+
 \item{output}{character. The default, \code{"word_embeddings"} includes only word
 embeddings in the output. \code{"context_embeddings"} includes only context
 embeddings. \code{"all"} includes both word and context embeddings.}
+
+\item{opts}{control parameters passed to \code{\link[RSpectra:svds]{RSpectra::svds()}}.}
 }
 \description{
 \code{train_svd(fcm)} decomposes the input \code{fcm} to produce word and/or context

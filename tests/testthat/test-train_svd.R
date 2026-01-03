@@ -105,9 +105,17 @@ test_that("train_svd row_weights parameter works", {
   fcm_mat <- make_test_fcm()
   n_rows <- nrow(fcm_mat)
   
+  # No weights
+  result_no_weights <- train_svd(fcm_mat, n_dims = 10)
+
   # Uniform weights
   weights_uniform <- rep(1, n_rows)
   result_uniform <- train_svd(fcm_mat, n_dims = 10, row_weights = weights_uniform)
+
+  # No difference between no weights and uniform weights
+  expect_true(isTRUE(all.equal(result_no_weights$word_embeddings, 
+                               result_uniform$word_embeddings, 
+                               tolerance = 0.01)))
   
   # Frequency-based weights
   weights_freq <- rowSums(fcm_mat)
@@ -117,6 +125,31 @@ test_that("train_svd row_weights parameter works", {
   expect_false(isTRUE(all.equal(result_uniform$word_embeddings, 
                                 result_freq$word_embeddings, 
                                 tolerance = 0.01)))
+})
+
+test_that("weighted and unweighted train_svd are identical with full rank", {
+  fcm_mat <- make_test_fcm()
+  
+  # Unweighted SVD
+  result_unweighted <- suppressWarnings(
+    train_svd(fcm_mat, n_dims = min(dim(fcm_mat)))
+  )
+  
+  # Weighted SVD
+  row_weights <- rowSums(fcm_mat)
+  col_weights <- colSums(fcm_mat)
+  result_weighted <- suppressWarnings(
+    train_svd(
+      fcm_mat, n_dims = min(dim(fcm_mat)), 
+      row_weights = row_weights, 
+      col_weights = col_weights
+    ))
+  
+  expect_equal(
+    tcrossprod(result_unweighted$word_embeddings), 
+    tcrossprod(result_weighted$word_embeddings),
+    tolerance = 1e-5
+  )
 })
 
 test_that("train_svd col_weights parameter works", {
