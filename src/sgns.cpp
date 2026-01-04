@@ -6,10 +6,13 @@
 #include <numeric>
 #include <iomanip>
 #include <string>
-#include <thread>
 #include <atomic>
 #include <cstring>
 #include <set>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace Rcpp;
 
@@ -499,7 +502,12 @@ List sgns_streaming_cpp(
     const bool verbose,                 // Verbose output
     const int threads) {                // Number of threads
 
-  int n_threads = threads > 0 ? threads : std::thread::hardware_concurrency();
+  int n_threads = threads;
+#ifdef _OPENMP
+  if (n_threads <= 0) n_threads = omp_get_max_threads();
+#else
+  n_threads = 1;
+#endif
   if (n_threads < 1) n_threads = 1;
   
   std::mt19937 rng(seed);
@@ -703,55 +711,87 @@ List sgns_streaming_cpp(
       Rcpp::Rcout << "Epoch " << (epoch + 1) << "/" << epochs << "\n";
     }
     
-    // Divide sentences among threads
-    std::vector<std::thread> threads_vec;
-    int sents_per_thread = (n_sentences + n_threads - 1) / n_threads;
-    
-    for (int t = 0; t < n_threads; ++t) {
+#ifdef _OPENMP
+#pragma omp parallel num_threads(n_threads)
+    {
+      int t = omp_get_thread_num();
+      int actual_n_threads = omp_get_num_threads();
+      int sents_per_thread = (n_sentences + actual_n_threads - 1) / actual_n_threads;
       int start_sent = t * sents_per_thread;
       int end_sent = std::min(start_sent + sents_per_thread, n_sentences);
-      if (start_sent >= n_sentences) break;
       
-      threads_vec.emplace_back(
-        sgns_streaming_worker,
-        std::cref(sentences),
-        std::cref(word_counts),
-        std::cref(neg_table),
-        NEG_TABLE_SIZE,
-        std::cref(exp_table),
-        std::cref(type_widths_vec),
-        std::cref(vocab_to_type),
-        std::cref(original_docs),
-        std::cref(doc_start_positions),
-        word_emb.data(),
-        context_emb.data(),
-        n_dims,
-        n_neg,
-        window,
-        static_cast<float>(lr),
-        actual_total_words,
-        t,
-        n_threads,
-        start_sent,
-        end_sent,
-        std::cref(weights_type),
-        static_cast<float>(weights_alpha),
-        std::cref(weights_vec_cpp),
-        weights_mode,
-        include_target,
-        static_cast<float>(forward_weight),
-        static_cast<float>(backward_weight),
-        use_fast_path,
-        use_words_metric,
-        clean_distance,
-        std::ref(processed_words)
-      );
+      if (start_sent < n_sentences) {
+        sgns_streaming_worker(
+          sentences,
+          word_counts,
+          neg_table,
+          NEG_TABLE_SIZE,
+          exp_table,
+          type_widths_vec,
+          vocab_to_type,
+          original_docs,
+          doc_start_positions,
+          word_emb.data(),
+          context_emb.data(),
+          n_dims,
+          n_neg,
+          window,
+          static_cast<float>(lr),
+          actual_total_words,
+          t,
+          actual_n_threads,
+          start_sent,
+          end_sent,
+          weights_type,
+          static_cast<float>(weights_alpha),
+          weights_vec_cpp,
+          weights_mode,
+          include_target,
+          static_cast<float>(forward_weight),
+          static_cast<float>(backward_weight),
+          use_fast_path,
+          use_words_metric,
+          clean_distance,
+          processed_words
+        );
+      }
     }
-    
-    // Wait for all threads
-    for (auto& t : threads_vec) {
-      t.join();
-    }
+#else
+    // Single-threaded fallback
+    sgns_streaming_worker(
+      sentences,
+      word_counts,
+      neg_table,
+      NEG_TABLE_SIZE,
+      exp_table,
+      type_widths_vec,
+      vocab_to_type,
+      original_docs,
+      doc_start_positions,
+      word_emb.data(),
+      context_emb.data(),
+      n_dims,
+      n_neg,
+      window,
+      static_cast<float>(lr),
+      actual_total_words,
+      0,
+      1,
+      0,
+      n_sentences,
+      weights_type,
+      static_cast<float>(weights_alpha),
+      weights_vec_cpp,
+      weights_mode,
+      include_target,
+      static_cast<float>(forward_weight),
+      static_cast<float>(backward_weight),
+      use_fast_path,
+      use_words_metric,
+      clean_distance,
+      processed_words
+    );
+#endif
     
     if (verbose) {
       // Calculate final alpha
@@ -921,7 +961,12 @@ List sgns_from_fcm_cpp(
     const bool verbose,                  // verbose output?
     const int threads) {                 // number of threads
 
-  int n_threads = threads > 0 ? threads : std::thread::hardware_concurrency();
+  int n_threads = threads;
+#ifdef _OPENMP
+  if (n_threads <= 0) n_threads = omp_get_max_threads();
+#else
+  n_threads = 1;
+#endif
   if (n_threads < 1) n_threads = 1;
   
   // Initialize random number generator
@@ -1038,98 +1083,172 @@ List sgns_from_fcm_cpp(
       Rcpp::Rcout << "Epoch " << (epoch + 1) << "/" << epochs << "\n";
     }
     
-    // Thread-local RNGs and gradient accumulators
-    std::vector<std::thread> threads_vec;
-    long long samples_per_thread = (n_samples + n_threads - 1) / n_threads;
-    
-    for (int t = 0; t < n_threads; ++t) {
+#ifdef _OPENMP
+#pragma omp parallel num_threads(n_threads)
+    {
+      int t = omp_get_thread_num();
+      int actual_n_threads = omp_get_num_threads();
+      long long samples_per_thread = (n_samples + actual_n_threads - 1) / actual_n_threads;
       long long start_idx = t * samples_per_thread;
       long long end_idx = std::min(start_idx + samples_per_thread, n_samples);
       
-      threads_vec.emplace_back([&, t, start_idx, end_idx]() {
-        // Thread-local RNG using LCG like word2vec
-        unsigned long long next_random = static_cast<unsigned long long>(seed) * (t + 1);
+      // Thread-local RNG using LCG like word2vec
+      unsigned long long next_random = static_cast<unsigned long long>(seed) * (t + 1);
+      
+      std::vector<float> hidden_errors(n_dims, 0.0f);
+      long long local_word_count = 0;
+      float alpha = static_cast<float>(lr);
+      
+      for (long long idx = start_idx; idx < end_idx; ++idx) {
+        int context_word = shuffled_contexts[idx];
+        int target_word = shuffled_words[idx];
         
-        std::vector<float> hidden_errors(n_dims, 0.0f);
-        long long local_word_count = 0;
-        float alpha = static_cast<float>(lr);
+        local_word_count++;
         
-        for (long long idx = start_idx; idx < end_idx; ++idx) {
-          int context_word = shuffled_contexts[idx];
-          int target_word = shuffled_words[idx];
+        // Update learning rate every 10000 words
+        if (local_word_count % 10000 == 0) {
+          long long global_count = processed_count.load(std::memory_order_relaxed);
+          alpha = static_cast<float>(lr) * (1.0f - static_cast<float>(global_count) / total_train_words);
+          if (alpha < static_cast<float>(lr) * 0.0001f) {
+            alpha = static_cast<float>(lr) * 0.0001f;
+          }
+          current_alpha.store(alpha, std::memory_order_relaxed);
+        }
+        
+        // Get context word embedding (this is the input)
+        float* w_vec = word_emb.data() + context_word * n_dims;
+        
+        // Zero hidden errors
+        std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
+        
+        // Negative sampling
+        for (int d = 0; d <= n_neg; ++d) {
+          int target;
+          float label;
           
-          local_word_count++;
-          
-          // Update learning rate every 10000 words
-          if (local_word_count % 10000 == 0) {
-            long long global_count = processed_count.load(std::memory_order_relaxed);
-            alpha = static_cast<float>(lr) * (1.0f - static_cast<float>(global_count) / total_train_words);
-            if (alpha < static_cast<float>(lr) * 0.0001f) {
-              alpha = static_cast<float>(lr) * 0.0001f;
-            }
-            current_alpha.store(alpha, std::memory_order_relaxed);
+          if (d == 0) {
+            // Positive sample
+            target = target_word;
+            label = 1.0f;
+          } else {
+            // Negative sample
+            next_random = next_random * 25214903917ULL + 11;
+            target = neg_table[(next_random >> 16) % NEG_TABLE_SIZE];
+            if (target == target_word) continue;
+            label = 0.0f;
           }
           
-          // Get context word embedding (this is the input)
-          float* w_vec = word_emb.data() + context_word * n_dims;
+          float* c_vec = context_emb.data() + target * n_dims;
           
-          // Zero hidden errors
-          std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
-          
-          // Negative sampling
-          for (int d = 0; d <= n_neg; ++d) {
-            int target;
-            float label;
-            
-            if (d == 0) {
-              // Positive sample
-              target = target_word;
-              label = 1.0f;
-            } else {
-              // Negative sample
-              next_random = next_random * 25214903917ULL + 11;
-              target = neg_table[(next_random >> 16) % NEG_TABLE_SIZE];
-              if (target == target_word) continue;
-              label = 0.0f;
-            }
-            
-            float* c_vec = context_emb.data() + target * n_dims;
-            
-            // Compute dot product
-            float dot = 0.0f;
-            for (int k = 0; k < n_dims; ++k) {
-              dot += w_vec[k] * c_vec[k];
-            }
-            
-            // Compute gradient
-            float pred = fast_sigmoid(dot, exp_table);
-            float grad = (label - pred) * alpha;
-            
-            // Accumulate gradient for input vector
-            for (int k = 0; k < n_dims; ++k) {
-              hidden_errors[k] += grad * c_vec[k];
-            }
-            
-            // Update output vector
-            for (int k = 0; k < n_dims; ++k) {
-              c_vec[k] += grad * w_vec[k];
-            }
-          }
-          
-          // Apply accumulated gradient to input vector
+          // Compute dot product
+          float dot = 0.0f;
           for (int k = 0; k < n_dims; ++k) {
-            w_vec[k] += hidden_errors[k];
+            dot += w_vec[k] * c_vec[k];
+          }
+          
+          // Compute gradient
+          float pred = fast_sigmoid(dot, exp_table);
+          float grad = (label - pred) * alpha;
+          
+          // Accumulate gradient for input vector
+          for (int k = 0; k < n_dims; ++k) {
+            hidden_errors[k] += grad * c_vec[k];
+          }
+          
+          // Update output vector
+          for (int k = 0; k < n_dims; ++k) {
+            c_vec[k] += grad * w_vec[k];
           }
         }
         
-        processed_count.fetch_add(local_word_count, std::memory_order_relaxed);
-      });
+        // Apply accumulated gradient to input vector
+        for (int k = 0; k < n_dims; ++k) {
+          w_vec[k] += hidden_errors[k];
+        }
+      }
+      
+      processed_count.fetch_add(local_word_count, std::memory_order_relaxed);
     }
-    
-    // Wait for all threads
-    for (auto& t : threads_vec) {
-      t.join();
+#else
+    // Single-threaded fallback
+    {
+      unsigned long long next_random = static_cast<unsigned long long>(seed);
+      
+      std::vector<float> hidden_errors(n_dims, 0.0f);
+      long long local_word_count = 0;
+      float alpha = static_cast<float>(lr);
+      
+      for (long long idx = 0; idx < n_samples; ++idx) {
+        int context_word = shuffled_contexts[idx];
+        int target_word = shuffled_words[idx];
+        
+        local_word_count++;
+        
+        // Update learning rate every 10000 words
+        if (local_word_count % 10000 == 0) {
+          long long global_count = processed_count.load(std::memory_order_relaxed);
+          alpha = static_cast<float>(lr) * (1.0f - static_cast<float>(global_count) / total_train_words);
+          if (alpha < static_cast<float>(lr) * 0.0001f) {
+            alpha = static_cast<float>(lr) * 0.0001f;
+          }
+          current_alpha.store(alpha, std::memory_order_relaxed);
+        }
+        
+        // Get context word embedding (this is the input)
+        float* w_vec = word_emb.data() + context_word * n_dims;
+        
+        // Zero hidden errors
+        std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
+        
+        // Negative sampling
+        for (int d = 0; d <= n_neg; ++d) {
+          int target;
+          float label;
+          
+          if (d == 0) {
+            // Positive sample
+            target = target_word;
+            label = 1.0f;
+          } else {
+            // Negative sample
+            next_random = next_random * 25214903917ULL + 11;
+            target = neg_table[(next_random >> 16) % NEG_TABLE_SIZE];
+            if (target == target_word) continue;
+            label = 0.0f;
+          }
+          
+          float* c_vec = context_emb.data() + target * n_dims;
+          
+          // Compute dot product
+          float dot = 0.0f;
+          for (int k = 0; k < n_dims; ++k) {
+            dot += w_vec[k] * c_vec[k];
+          }
+          
+          // Compute gradient
+          float pred = fast_sigmoid(dot, exp_table);
+          float grad = (label - pred) * alpha;
+          
+          // Accumulate gradient for input vector
+          for (int k = 0; k < n_dims; ++k) {
+            hidden_errors[k] += grad * c_vec[k];
+          }
+          
+          // Update output vector
+          for (int k = 0; k < n_dims; ++k) {
+            c_vec[k] += grad * w_vec[k];
+          }
+        }
+        
+        // Apply accumulated gradient to input vector
+        for (int k = 0; k < n_dims; ++k) {
+          w_vec[k] += hidden_errors[k];
+        }
+      }
+      
+      processed_count.fetch_add(local_word_count, std::memory_order_relaxed);
     }
+#endif
     
     if (verbose) {
       Rcpp::Rcout << "  Alpha: " << current_alpha.load() << "\n";

@@ -22,7 +22,6 @@ Imports:
     methods,
     Rcpp,
     quanteda,
-    RcppParallel,
     RSpectra
 Suggests:
     embedplyr,
@@ -46,5 +45,4 @@ Depends:
     R (>= 3.5)
 VignetteBuilder: knitr
 LinkingTo: 
-    Rcpp,
-    RcppParallel
+    Rcpp
