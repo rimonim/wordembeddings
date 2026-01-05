@@ -299,9 +299,7 @@ test_that("train_sgns.fcm reproducibility with seed", {
   expect_equal(result1$word_embeddings, result2$word_embeddings, tolerance = 0.01)
 })
 
-test_that("train_sgns.tokens and train_sgns.fcm both produce valid embeddings", {
-  library(quanteda)
-  
+test_that("train_sgns.tokens and train_sgns.fcm both produce valid embeddings", {  
   toks_test <- make_large_test_tokens()
   
   # Default context_spec with min_count to ensure same vocabulary
@@ -332,9 +330,7 @@ test_that("train_sgns.tokens and train_sgns.fcm both produce valid embeddings", 
   # limited training data. Both methods are validated separately in other tests.
 })
 
-test_that("Context weights affect training (linear decay)", {
-  library(quanteda)
-  
+test_that("Context weights affect training (linear decay)", {  
   toks_test <- make_large_test_tokens()
   
   # Compare no weighting vs linear decay
@@ -355,9 +351,7 @@ test_that("Context weights affect training (linear decay)", {
   expect_true(cor_val < 0.95, info = sprintf("Dot products should differ, correlation: %.3f", cor_val))
 })
 
-test_that("Direction parameter affects training (forward vs backward)", {
-  library(quanteda)
-  
+test_that("Direction parameter affects training (forward vs backward)", {  
   toks_test <- make_large_test_tokens()
   
   # Forward vs backward context
@@ -378,9 +372,7 @@ test_that("Direction parameter affects training (forward vs backward)", {
   expect_true(cor_val < 0.95, info = sprintf("Dot products should differ, correlation: %.3f", cor_val))
 })
 
-test_that("Distance metric parameter works", {
-  library(quanteda)
-  
+test_that("Distance metric parameter works", {  
   toks_test <- make_large_test_tokens()
   
   # Test that distance metric options work without errors
@@ -397,9 +389,7 @@ test_that("Distance metric parameter works", {
   expect_true(all(is.finite(m_chars$word_embeddings)))
 })
 
-test_that("Custom weight vector works", {
-  library(quanteda)
-  
+test_that("Custom weight vector works", {  
   toks_test <- make_large_test_tokens()
   
   # Custom weights: more extreme difference (uniform vs. highly peaked)

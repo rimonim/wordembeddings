@@ -151,10 +151,11 @@ fcm_pmi <- function(fcm, positive = TRUE, context_smoothing = 1, target_smoothin
 #' @rdname fcm_transformations
 #' @param method smoothing method:
 #' \describe{
+#'   \item{`laplace`}{Laplace (a.k.a. "add one") smoothing}
 #'   \item{`goodturing`}{the "Simple Good-Turing" algorithm described by Gale &
 #'   Sampson (1995)}
-#'   \item{`laplace`}{Laplace (a.k.a. "add one") smoothing}
 #' }
+#' @param smoothing for `method = "laplace"`, constant added to each count
 #' @param crit criterion for switching between raw and smoothed estimates when
 #'	`method = "goodturing"`. The default `1.96` corresponds to the standard
 #'	0.05 significance criterion.
@@ -164,7 +165,7 @@ fcm_pmi <- function(fcm, positive = TRUE, context_smoothing = 1, target_smoothin
 #'  requirements for large FCMs.
 #'
 #' @export
-fcm_smooth <- function(fcm, method = "goodturing", crit = 1.96, estimate_zeros = TRUE) {
+fcm_smooth <- function(fcm, method = "goodturing", crit = 1.96, smoothing = 1, estimate_zeros = TRUE) {
 	if( is_quanteda <- inherits(fcm, "fcm") ) {
 		fcm_meta <- fcm@meta
 	}
@@ -254,17 +255,17 @@ fcm_smooth <- function(fcm, method = "goodturing", crit = 1.96, estimate_zeros =
 		}
 	}else if (method == "laplace") {
 		if (is_quanteda || is_sparseMatrix || is_SparseArray) {
-			fcm@x <- fcm@x + 1
+			fcm@x <- fcm@x + smoothing
 			if (estimate_zeros) {
 				nz_indices <- (fcm@j * nrow(fcm)) + (fcm@i + 1)
 				fcm <- as.matrix(fcm)
-				fcm[-nz_indices] <- 1
+				fcm[-nz_indices] <- smoothing
 			}
 		}else{
 			if (estimate_zeros) {
-				fcm <- fcm + 1
+				fcm <- fcm + smoothing
 			}else{
-				fcm[fcm != 0] <- fcm[fcm != 0] + 1
+				fcm[fcm != 0] <- fcm[fcm != 0] + smoothing
 			}
 		}
 	}
