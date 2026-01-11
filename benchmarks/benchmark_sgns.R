@@ -18,7 +18,7 @@ ctx <- context_spec(window = 5, weights = "none", vocab_size = 10000)  # Match w
 
 # Create FCM (optional - for FCM-based training)
 fcm <- wordembeddings::fcm(toks, context = ctx)
-sum(fcm) # 30,614,552 training examples
+sum(fcm) # 33,642,918 training examples
 
 # Train SGNS model (word2vec)
 word2vec_mod <- word2vec(x = corp, type = "skip-gram", dim = 100, window = 5, 

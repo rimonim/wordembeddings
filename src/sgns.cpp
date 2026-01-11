@@ -218,7 +218,7 @@ inline float calculate_distance_dirty_with_widths(int pos1, int pos2,
   return dist;
 }
 
-// Thread worker for streaming SGNS (word2vec style)
+// Thread worker for streaming SGNS (word2vec style) with AdaGrad optimizer
 void sgns_streaming_worker(
     // Data (shared, read-only)
     const std::vector<std::vector<Token>>& sentences,  // Tokens with positions
@@ -233,12 +233,14 @@ void sgns_streaming_worker(
     // Embeddings (shared, read-write)
     float* word_emb,
     float* context_emb,
+    // AdaGrad accumulators (shared, read-write)
+    float* grad_sq_word,
+    float* grad_sq_context,
     // Parameters
     const int n_dims,
     const int n_neg,
     const int window,
-    const float initial_lr,
-    const long long total_train_words,
+    const float learning_rate,
     const int thread_id,
     const int n_threads,
     const int start_sent,
@@ -268,7 +270,6 @@ void sgns_streaming_worker(
   std::uniform_real_distribution<float> uniform_dist(0.0f, 1.0f);
   
   long long local_word_count = 0;
-  float alpha = initial_lr;
   
   // Process sentences assigned to this thread
   for (int sent_idx = start_sent; sent_idx < end_sent; ++sent_idx) {
@@ -290,13 +291,6 @@ void sgns_streaming_worker(
       int word_idx = sentence[pos].vocab_idx;
       
       local_word_count++;
-      
-      // Update learning rate every 10000 words
-      if (local_word_count % 10000 == 0) {
-        long long global_word_count = processed_words.load(std::memory_order_relaxed);
-        alpha = initial_lr * (1.0f - static_cast<float>(global_word_count) / total_train_words);
-        if (alpha < initial_lr * 0.0001f) alpha = initial_lr * 0.0001f;
-      }
       
       if (use_fast_path) {
         // Fast path: original word2vec with random window
@@ -328,6 +322,7 @@ void sgns_streaming_worker(
             }
             
             float* c_vec = context_emb + target * n_dims;
+            float* grad_sq_c = grad_sq_context + target * n_dims;
             
             float dot = 0.0f;
             for (int k = 0; k < n_dims; ++k) {
@@ -335,19 +330,26 @@ void sgns_streaming_worker(
             }
             
             float pred = fast_sigmoid(dot, exp_table);
-            float grad = (label - pred) * alpha;
+            float base_grad = label - pred;
             
+            // Accumulate gradient for word vector (will apply AdaGrad later)
             for (int k = 0; k < n_dims; ++k) {
-              hidden_errors[k] += grad * c_vec[k];
+              hidden_errors[k] += base_grad * c_vec[k];
             }
             
+            // AdaGrad update for context vector
             for (int k = 0; k < n_dims; ++k) {
-              c_vec[k] += grad * w_vec[k];
+              float grad_c = base_grad * w_vec[k];
+              c_vec[k] += learning_rate * grad_c / std::sqrt(grad_sq_c[k]);
+              grad_sq_c[k] += grad_c * grad_c;
             }
           }
           
+          // AdaGrad update for word vector
+          float* grad_sq_w = grad_sq_word + context_idx * n_dims;
           for (int k = 0; k < n_dims; ++k) {
-            w_vec[k] += hidden_errors[k];
+            w_vec[k] += learning_rate * hidden_errors[k] / std::sqrt(grad_sq_w[k]);
+            grad_sq_w[k] += hidden_errors[k] * hidden_errors[k];
           }
         }
       } else {
@@ -447,6 +449,7 @@ void sgns_streaming_worker(
             }
             
             float* c_vec = context_emb + target * n_dims;
+            float* grad_sq_c = grad_sq_context + target * n_dims;
             
             float dot = 0.0f;
             for (int k = 0; k < n_dims; ++k) {
@@ -454,19 +457,26 @@ void sgns_streaming_worker(
             }
             
             float pred = fast_sigmoid(dot, exp_table);
-            float grad = (label - pred) * alpha;
+            float base_grad = label - pred;
             
+            // Accumulate gradient for word vector (will apply AdaGrad later)
             for (int k = 0; k < n_dims; ++k) {
-              hidden_errors[k] += grad * c_vec[k];
+              hidden_errors[k] += base_grad * c_vec[k];
             }
             
+            // AdaGrad update for context vector
             for (int k = 0; k < n_dims; ++k) {
-              c_vec[k] += grad * w_vec[k];
+              float grad_c = base_grad * w_vec[k];
+              c_vec[k] += learning_rate * grad_c / std::sqrt(grad_sq_c[k]);
+              grad_sq_c[k] += grad_c * grad_c;
             }
           }
           
+          // AdaGrad update for word vector
+          float* grad_sq_w = grad_sq_word + context_idx * n_dims;
           for (int k = 0; k < n_dims; ++k) {
-            w_vec[k] += hidden_errors[k];
+            w_vec[k] += learning_rate * hidden_errors[k] / std::sqrt(grad_sq_w[k]);
+            grad_sq_w[k] += hidden_errors[k] * hidden_errors[k];
           }
         }
       }
@@ -535,6 +545,10 @@ List sgns_streaming_cpp(
   int emb_size = vocab_len * n_dims;
   std::vector<float> word_emb(emb_size);
   std::vector<float> context_emb(emb_size);
+  
+  // Initialize AdaGrad squared gradient accumulators to 1.0 (like GloVe)
+  std::vector<float> grad_sq_word(emb_size, 1.0f);
+  std::vector<float> grad_sq_context(emb_size, 1.0f);
   
   if (init_type == "uniform") {
     std::uniform_real_distribution<float> init_dist(-0.5f / n_dims, 0.5f / n_dims);
@@ -733,11 +747,12 @@ List sgns_streaming_cpp(
           doc_start_positions,
           word_emb.data(),
           context_emb.data(),
+          grad_sq_word.data(),
+          grad_sq_context.data(),
           n_dims,
           n_neg,
           window,
           static_cast<float>(lr),
-          actual_total_words,
           t,
           actual_n_threads,
           start_sent,
@@ -770,11 +785,12 @@ List sgns_streaming_cpp(
       doc_start_positions,
       word_emb.data(),
       context_emb.data(),
+      grad_sq_word.data(),
+      grad_sq_context.data(),
       n_dims,
       n_neg,
       window,
       static_cast<float>(lr),
-      actual_total_words,
       0,
       1,
       0,
@@ -794,10 +810,7 @@ List sgns_streaming_cpp(
 #endif
     
     if (verbose) {
-      // Calculate final alpha
-      float final_alpha = static_cast<float>(lr) * (1.0f - static_cast<float>(processed_words.load()) / actual_total_words);
-      if (final_alpha < static_cast<float>(lr) * 0.0001f) final_alpha = static_cast<float>(lr) * 0.0001f;
-      Rcpp::Rcout << "  Alpha: " << final_alpha << "\n";
+      Rcpp::Rcout << "  Processed: " << processed_words.load() << " words\n";
     }
     
     Rcpp::checkUserInterrupt();
@@ -819,130 +832,6 @@ List sgns_streaming_cpp(
     Named("context_embeddings") = context_embeddings,
     Named("vocab_indices") = vocab_indices_ordered
   );
-}
-
-// Thread worker function for FCM-based method - processes a range of training examples
-void sgns_thread_worker(
-    // Data (shared, read-only)
-    const int* word_ids,
-    const int* context_ids,
-    const float* counts,
-    const int* neg_table,
-    const int neg_table_size,
-    const std::vector<float>& exp_table,
-    // Embeddings (shared, read-write - lock-free updates)
-    float* word_emb,
-    float* context_emb,
-    // Parameters
-    const int n_dims,
-    const int n_neg,
-    const float initial_lr,
-    const int total_examples,
-    const int thread_id,
-    const int n_threads,
-    // Progress tracking
-    std::atomic<long long>& processed_count,
-    const long long total_train_words,
-    std::atomic<float>& current_alpha
-) {
-  // Thread-local RNG
-  std::mt19937 rng(thread_id * 12345 + 1);
-  std::uniform_int_distribution<int> neg_sampler(0, neg_table_size - 1);
-  
-  // Thread-local gradient accumulator
-  std::vector<float> hidden_errors(n_dims);
-  
-  // Calculate this thread's range
-  int examples_per_thread = (total_examples + n_threads - 1) / n_threads;
-  int start_idx = thread_id * examples_per_thread;
-  int end_idx = std::min(start_idx + examples_per_thread, total_examples);
-  
-  // For learning rate updates - update every ~10000 words
-  const int lr_update_interval = 10000;
-  long long local_word_count = 0;
-  long long last_word_count = 0;
-  
-  for (int idx = start_idx; idx < end_idx; ++idx) {
-    int word_id = word_ids[idx];
-    int context_id = context_ids[idx];
-    float count = counts[idx];
-    
-    // Number of training iterations for this pair
-    // Use ceiling of count (standard approach for FCM-based training)
-    int n_iters = static_cast<int>(count + 0.5f);
-    if (n_iters < 1) n_iters = 1;
-    
-    for (int iter = 0; iter < n_iters; ++iter) {
-      local_word_count++;
-      
-      // Update learning rate periodically
-      if (local_word_count - last_word_count > lr_update_interval) {
-        processed_count += (local_word_count - last_word_count);
-        last_word_count = local_word_count;
-        
-        float progress = static_cast<float>(processed_count.load()) / total_train_words;
-        float alpha = initial_lr * (1.0f - progress);
-        if (alpha < initial_lr * 0.0001f) alpha = initial_lr * 0.0001f;
-        current_alpha.store(alpha);
-      }
-      
-      float alpha = current_alpha.load();
-      
-      // Get pointers to embeddings
-      float* w_vec = word_emb + word_id * n_dims;
-      
-      // Zero out hidden errors
-      std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
-      
-      // Process positive sample and negative samples together
-      // This is the key optimization from word2vec: accumulate gradients
-      for (int d = 0; d <= n_neg; ++d) {
-        int target;
-        float label;
-        
-        if (d == 0) {
-          // Positive sample
-          target = context_id;
-          label = 1.0f;
-        } else {
-          // Negative sample
-          target = neg_table[neg_sampler(rng)];
-          if (target == context_id) continue;  // Skip if same as positive
-          label = 0.0f;
-        }
-        
-        float* c_vec = context_emb + target * n_dims;
-        
-        // Compute dot product
-        float dot = 0.0f;
-        for (int k = 0; k < n_dims; ++k) {
-          dot += w_vec[k] * c_vec[k];
-        }
-        
-        // Compute gradient
-        float pred = fast_sigmoid(dot, exp_table);
-        float grad = (label - pred) * alpha;
-        
-        // Accumulate gradient for word vector
-        for (int k = 0; k < n_dims; ++k) {
-          hidden_errors[k] += grad * c_vec[k];
-        }
-        
-        // Update context vector immediately
-        for (int k = 0; k < n_dims; ++k) {
-          c_vec[k] += grad * w_vec[k];
-        }
-      }
-      
-      // Apply accumulated gradient to word vector
-      for (int k = 0; k < n_dims; ++k) {
-        w_vec[k] += hidden_errors[k];
-      }
-    }
-  }
-  
-  // Final update of processed count
-  processed_count += (local_word_count - last_word_count);
 }
 
 // [[Rcpp::export(rng = false)]]
@@ -976,6 +865,10 @@ List sgns_from_fcm_cpp(
   int emb_size = n_words * n_dims;
   std::vector<float> word_emb(emb_size);
   std::vector<float> context_emb(emb_size);  // Same size as word_emb (symmetric)
+  
+  // Initialize AdaGrad squared gradient accumulators to 1.0 (like GloVe)
+  std::vector<float> grad_sq_word(emb_size, 1.0f);
+  std::vector<float> grad_sq_context(emb_size, 1.0f);
   
   // Initialize embeddings
   if (init_type == "uniform") {
@@ -1077,7 +970,6 @@ List sgns_from_fcm_cpp(
     
     // Progress tracking
     std::atomic<long long> processed_count(epoch * n_samples);
-    std::atomic<float> current_alpha(static_cast<float>(lr));
     
     if (verbose) {
       Rcpp::Rcout << "Epoch " << (epoch + 1) << "/" << epochs << "\n";
@@ -1097,7 +989,6 @@ List sgns_from_fcm_cpp(
       
       std::vector<float> hidden_errors(n_dims, 0.0f);
       long long local_word_count = 0;
-      float alpha = static_cast<float>(lr);
       
       for (long long idx = start_idx; idx < end_idx; ++idx) {
         int context_word = shuffled_contexts[idx];
@@ -1105,18 +996,9 @@ List sgns_from_fcm_cpp(
         
         local_word_count++;
         
-        // Update learning rate every 10000 words
-        if (local_word_count % 10000 == 0) {
-          long long global_count = processed_count.load(std::memory_order_relaxed);
-          alpha = static_cast<float>(lr) * (1.0f - static_cast<float>(global_count) / total_train_words);
-          if (alpha < static_cast<float>(lr) * 0.0001f) {
-            alpha = static_cast<float>(lr) * 0.0001f;
-          }
-          current_alpha.store(alpha, std::memory_order_relaxed);
-        }
-        
         // Get context word embedding (this is the input)
         float* w_vec = word_emb.data() + context_word * n_dims;
+        float* grad_sq_w = grad_sq_word.data() + context_word * n_dims;
         
         // Zero hidden errors
         std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
@@ -1139,6 +1021,7 @@ List sgns_from_fcm_cpp(
           }
           
           float* c_vec = context_emb.data() + target * n_dims;
+          float* grad_sq_c = grad_sq_context.data() + target * n_dims;
           
           // Compute dot product
           float dot = 0.0f;
@@ -1148,22 +1031,25 @@ List sgns_from_fcm_cpp(
           
           // Compute gradient
           float pred = fast_sigmoid(dot, exp_table);
-          float grad = (label - pred) * alpha;
+          float base_grad = label - pred;
           
-          // Accumulate gradient for input vector
+          // Accumulate gradient for input vector (will apply AdaGrad later)
           for (int k = 0; k < n_dims; ++k) {
-            hidden_errors[k] += grad * c_vec[k];
+            hidden_errors[k] += base_grad * c_vec[k];
           }
           
-          // Update output vector
+          // AdaGrad update for context vector
           for (int k = 0; k < n_dims; ++k) {
-            c_vec[k] += grad * w_vec[k];
+            float grad_c = base_grad * w_vec[k];
+            c_vec[k] += static_cast<float>(lr) * grad_c / std::sqrt(grad_sq_c[k]);
+            grad_sq_c[k] += grad_c * grad_c;
           }
         }
         
-        // Apply accumulated gradient to input vector
+        // AdaGrad update for word vector
         for (int k = 0; k < n_dims; ++k) {
-          w_vec[k] += hidden_errors[k];
+          w_vec[k] += static_cast<float>(lr) * hidden_errors[k] / std::sqrt(grad_sq_w[k]);
+          grad_sq_w[k] += hidden_errors[k] * hidden_errors[k];
         }
       }
       
@@ -1176,7 +1062,6 @@ List sgns_from_fcm_cpp(
       
       std::vector<float> hidden_errors(n_dims, 0.0f);
       long long local_word_count = 0;
-      float alpha = static_cast<float>(lr);
       
       for (long long idx = 0; idx < n_samples; ++idx) {
         int context_word = shuffled_contexts[idx];
@@ -1184,18 +1069,9 @@ List sgns_from_fcm_cpp(
         
         local_word_count++;
         
-        // Update learning rate every 10000 words
-        if (local_word_count % 10000 == 0) {
-          long long global_count = processed_count.load(std::memory_order_relaxed);
-          alpha = static_cast<float>(lr) * (1.0f - static_cast<float>(global_count) / total_train_words);
-          if (alpha < static_cast<float>(lr) * 0.0001f) {
-            alpha = static_cast<float>(lr) * 0.0001f;
-          }
-          current_alpha.store(alpha, std::memory_order_relaxed);
-        }
-        
         // Get context word embedding (this is the input)
         float* w_vec = word_emb.data() + context_word * n_dims;
+        float* grad_sq_w = grad_sq_word.data() + context_word * n_dims;
         
         // Zero hidden errors
         std::memset(hidden_errors.data(), 0, n_dims * sizeof(float));
@@ -1218,6 +1094,7 @@ List sgns_from_fcm_cpp(
           }
           
           float* c_vec = context_emb.data() + target * n_dims;
+          float* grad_sq_c = grad_sq_context.data() + target * n_dims;
           
           // Compute dot product
           float dot = 0.0f;
@@ -1227,22 +1104,25 @@ List sgns_from_fcm_cpp(
           
           // Compute gradient
           float pred = fast_sigmoid(dot, exp_table);
-          float grad = (label - pred) * alpha;
+          float base_grad = label - pred;
           
-          // Accumulate gradient for input vector
+          // Accumulate gradient for input vector (will apply AdaGrad later)
           for (int k = 0; k < n_dims; ++k) {
-            hidden_errors[k] += grad * c_vec[k];
+            hidden_errors[k] += base_grad * c_vec[k];
           }
           
-          // Update output vector
+          // AdaGrad update for context vector
           for (int k = 0; k < n_dims; ++k) {
-            c_vec[k] += grad * w_vec[k];
+            float grad_c = base_grad * w_vec[k];
+            c_vec[k] += static_cast<float>(lr) * grad_c / std::sqrt(grad_sq_c[k]);
+            grad_sq_c[k] += grad_c * grad_c;
           }
         }
         
-        // Apply accumulated gradient to input vector
+        // AdaGrad update for word vector
         for (int k = 0; k < n_dims; ++k) {
-          w_vec[k] += hidden_errors[k];
+          w_vec[k] += static_cast<float>(lr) * hidden_errors[k] / std::sqrt(grad_sq_w[k]);
+          grad_sq_w[k] += hidden_errors[k] * hidden_errors[k];
         }
       }
       
@@ -1251,7 +1131,7 @@ List sgns_from_fcm_cpp(
 #endif
     
     if (verbose) {
-      Rcpp::Rcout << "  Alpha: " << current_alpha.load() << "\n";
+      Rcpp::Rcout << "  Processed: " << processed_count.load() << " pairs\n";
     }
     
     // Check for user interrupt

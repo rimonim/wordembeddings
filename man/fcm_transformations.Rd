@@ -17,7 +17,13 @@ fcm_pmi(
   prob = NULL
 )
 
-fcm_smooth(fcm, method = "goodturing", crit = 1.96, estimate_zeros = TRUE)
+fcm_smooth(
+  fcm,
+  method = "goodturing",
+  crit = 1.96,
+  smoothing = 1,
+  estimate_zeros = TRUE
+)
 
 fcm_positive(fcm)
 
@@ -45,14 +51,16 @@ taken as raw counts.}
 
 \item{method}{smoothing method:
 \describe{
+\item{\code{laplace}}{Laplace (a.k.a. "add one") smoothing}
 \item{\code{goodturing}}{the "Simple Good-Turing" algorithm described by Gale &
 Sampson (1995)}
-\item{\code{laplace}}{Laplace (a.k.a. "add one") smoothing}
 }}
 
 \item{crit}{criterion for switching between raw and smoothed estimates when
 \code{method = "goodturing"}. The default \code{1.96} corresponds to the standard
 0.05 significance criterion.}
+
+\item{smoothing}{for \code{method = "laplace"}, constant added to each count}
 
 \item{estimate_zeros}{logical; if \code{TRUE}, distribute the estimated
 probability of unobserved tokens among features with a count of zero.
