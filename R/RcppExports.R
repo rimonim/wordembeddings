@@ -9,8 +9,8 @@ glove_fit_cpp <- function(i_indices, j_indices, x_values, n_rows, n_cols, n_dims
     .Call(`_wordembeddings_glove_fit_cpp`, i_indices, j_indices, x_values, n_rows, n_cols, n_dims, x_max, alpha, lr, epochs, weight_type_str, fix_bias, row_sums, col_sums, init_type, seed, verbose, shuffle, threads, include_word_embeddings, include_context_embeddings)
 }
 
-sgns_streaming_cpp <- function(tokens_list, vocab, type_widths, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, weights_type, weights_alpha, weights_vec, weights_mode, include_target, forward_weight, backward_weight, clean_distance, init_type, seed, verbose, threads) {
-    .Call(`_wordembeddings_sgns_streaming_cpp`, tokens_list, vocab, type_widths, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, weights_type, weights_alpha, weights_vec, weights_mode, include_target, forward_weight, backward_weight, clean_distance, init_type, seed, verbose, threads)
+sgns_streaming_cpp <- function(tokens_list, vocab, type_widths, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, weights_type, weights_alpha, weights_vec, weights_mode, include_target, forward_weight, backward_weight, clean_distance, n_samples, init_type, seed, verbose, threads) {
+    .Call(`_wordembeddings_sgns_streaming_cpp`, tokens_list, vocab, type_widths, n_dims, n_neg, window, lr, epochs, context_smoothing, subsample, weights_type, weights_alpha, weights_vec, weights_mode, include_target, forward_weight, backward_weight, clean_distance, n_samples, init_type, seed, verbose, threads)
 }
 
 sgns_from_fcm_cpp <- function(i_indices, j_indices, x_values, n_words, n_contexts, n_dims, n_neg, lr, epochs, init_type, seed, verbose, threads) {

@@ -20,6 +20,7 @@ train_sgns(x, ...)
   seed = NULL,
   verbose = TRUE,
   threads = parallel::detectCores(),
+  samples = NULL,
   ...
 )
 
@@ -72,6 +73,10 @@ and vocabulary parameters. Required for \code{train_sgns.tokens}.}
 \item{verbose}{logical. Print progress information.}
 
 \item{threads}{integer. Number of threads. Default uses all available cores.}
+
+\item{samples}{integer. Number of context samples per target word in weighted
+sampling mode. Defaults to window size. Lower values speed up training with
+large windows at some cost to quality.}
 }
 \description{
 Train word and/or context embeddings using the Skip-Gram with Negative

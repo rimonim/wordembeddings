@@ -240,6 +240,7 @@ void sgns_streaming_worker(
     const int n_dims,
     const int n_neg,
     const int window,
+    const int n_samples,
     const float learning_rate,
     const int thread_id,
     const int n_threads,
@@ -412,9 +413,7 @@ void sgns_streaming_worker(
         }
         
         // Sample contexts proportional to weights
-        // Number of samples = window (same average as fast path)
-        int n_samples = window;
-        
+        // Number of samples controlled by n_samples parameter
         for (int sample = 0; sample < n_samples; ++sample) {
           // Sample context position
           float rand_val = uniform_dist(rng);
@@ -507,6 +506,7 @@ List sgns_streaming_cpp(
     const double forward_weight,        // Forward context weight
     const double backward_weight,       // Backward context weight
     const bool clean_distance,          // Use original positions (clean) vs filtered positions (dirty)
+    const int n_samples,                // Number of context samples per target word
     const std::string init_type,        // "uniform" or "normal"
     const int seed,                     // Random seed
     const bool verbose,                 // Verbose output
@@ -752,6 +752,7 @@ List sgns_streaming_cpp(
           n_dims,
           n_neg,
           window,
+          n_samples,
           static_cast<float>(lr),
           t,
           actual_n_threads,
@@ -790,6 +791,7 @@ List sgns_streaming_cpp(
       n_dims,
       n_neg,
       window,
+      n_samples,
       static_cast<float>(lr),
       0,
       1,

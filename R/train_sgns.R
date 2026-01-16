@@ -15,6 +15,9 @@
 #' @param seed integer. Random seed for reproducibility.
 #' @param verbose logical. Print progress information.
 #' @param threads integer. Number of threads. Default uses all available cores.
+#' @param samples integer. Number of context samples per target word in weighted
+#'   sampling mode. Defaults to window size. Lower values speed up training with
+#'   large windows at some cost to quality.
 #' @param ... Additional arguments passed to methods.
 #'
 #' @references
@@ -42,6 +45,7 @@ train_sgns.tokens <- function(
   seed = NULL,
   verbose = TRUE,
   threads = parallel::detectCores(),
+  samples = NULL,
   ...
 ) {
   
@@ -57,6 +61,16 @@ train_sgns.tokens <- function(
   
   # Extract all parameters from context_spec
   window_size <- context$window
+  
+
+  # Set samples to window size if not specified
+  if (is.null(samples)) {
+    samples <- window_size
+  } else {
+    samples <- as.integer(samples)
+    if (samples < 1) stop("samples must be a positive integer")
+  }
+  
   min_count <- context$min_count
   vocab_size <- context$vocab_size
   vocab_coverage <- context$vocab_coverage
@@ -213,6 +227,7 @@ train_sgns.tokens <- function(
     forward_weight = forward_weight,
     backward_weight = backward_weight,
     clean_distance = clean_distance,
+    n_samples = as.integer(samples),
     init_type = init,
     seed = as.integer(seed),
     verbose = verbose,
