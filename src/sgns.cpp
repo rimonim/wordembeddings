@@ -242,6 +242,7 @@ void sgns_streaming_worker(
     const int window,
     const int n_samples,
     const float learning_rate,
+    const float regularization,
     const int thread_id,
     const int n_threads,
     const int start_sent,
@@ -348,19 +349,20 @@ void sgns_streaming_worker(
               hidden_errors[k] += base_grad * c_vec[k];
             }
             
-            // AdaGrad update for context vector
+            // AdaGrad update for context vector with L2 regularization
             for (int k = 0; k < n_dims; ++k) {
-              float grad_c = base_grad * w_vec[k];
+              float grad_c = base_grad * w_vec[k] - regularization * c_vec[k];
               c_vec[k] += learning_rate * grad_c / std::sqrt(grad_sq_c[k]);
               grad_sq_c[k] += grad_c * grad_c;
             }
           }
           
-          // AdaGrad update for word vector
+          // AdaGrad update for word vector with L2 regularization
           float* grad_sq_w = grad_sq_word + context_idx * n_dims;
           for (int k = 0; k < n_dims; ++k) {
-            w_vec[k] += learning_rate * hidden_errors[k] / std::sqrt(grad_sq_w[k]);
-            grad_sq_w[k] += hidden_errors[k] * hidden_errors[k];
+            float grad_w = hidden_errors[k] - regularization * w_vec[k];
+            w_vec[k] += learning_rate * grad_w / std::sqrt(grad_sq_w[k]);
+            grad_sq_w[k] += grad_w * grad_w;
           }
         }
       } else {
@@ -473,19 +475,20 @@ void sgns_streaming_worker(
               hidden_errors[k] += base_grad * c_vec[k];
             }
             
-            // AdaGrad update for context vector
+            // AdaGrad update for context vector with L2 regularization
             for (int k = 0; k < n_dims; ++k) {
-              float grad_c = base_grad * w_vec[k];
+              float grad_c = base_grad * w_vec[k] - regularization * c_vec[k];
               c_vec[k] += learning_rate * grad_c / std::sqrt(grad_sq_c[k]);
               grad_sq_c[k] += grad_c * grad_c;
             }
           }
           
-          // AdaGrad update for word vector
+          // AdaGrad update for word vector with L2 regularization
           float* grad_sq_w = grad_sq_word + context_idx * n_dims;
           for (int k = 0; k < n_dims; ++k) {
-            w_vec[k] += learning_rate * hidden_errors[k] / std::sqrt(grad_sq_w[k]);
-            grad_sq_w[k] += hidden_errors[k] * hidden_errors[k];
+            float grad_w = hidden_errors[k] - regularization * w_vec[k];
+            w_vec[k] += learning_rate * grad_w / std::sqrt(grad_sq_w[k]);
+            grad_sq_w[k] += grad_w * grad_w;
           }
         }
       }
@@ -520,7 +523,8 @@ List sgns_streaming_cpp(
     const std::string init_type,        // "uniform" or "normal"
     const int seed,                     // Random seed
     const bool verbose,                 // Verbose output
-    const int threads) {                // Number of threads
+    const int threads,                  // Number of threads
+    const double regularization) {      // L2 regularization parameter
 
   int n_threads = threads;
 #ifdef _OPENMP
@@ -764,6 +768,7 @@ List sgns_streaming_cpp(
           window,
           n_samples,
           static_cast<float>(lr),
+          static_cast<float>(regularization),
           t,
           actual_n_threads,
           start_sent,
@@ -803,6 +808,7 @@ List sgns_streaming_cpp(
       window,
       n_samples,
       static_cast<float>(lr),
+      static_cast<float>(regularization),
       0,
       1,
       0,
@@ -860,7 +866,8 @@ List sgns_from_fcm_cpp(
     const std::string init_type,         // "uniform" or "normal" initialization
     const int seed,                      // random seed
     const bool verbose,                  // verbose output?
-    const int threads) {                 // number of threads
+    const int threads,                   // number of threads
+    const double regularization) {       // L2 regularization parameter
 
   int n_threads = threads;
 #ifdef _OPENMP
@@ -1050,18 +1057,19 @@ List sgns_from_fcm_cpp(
             hidden_errors[k] += base_grad * c_vec[k];
           }
           
-          // AdaGrad update for context vector
+          // AdaGrad update for context vector with L2 regularization
           for (int k = 0; k < n_dims; ++k) {
-            float grad_c = base_grad * w_vec[k];
+            float grad_c = base_grad * w_vec[k] - static_cast<float>(regularization) * c_vec[k];
             c_vec[k] += static_cast<float>(lr) * grad_c / std::sqrt(grad_sq_c[k]);
             grad_sq_c[k] += grad_c * grad_c;
           }
         }
         
-        // AdaGrad update for word vector
+        // AdaGrad update for word vector with L2 regularization
         for (int k = 0; k < n_dims; ++k) {
-          w_vec[k] += static_cast<float>(lr) * hidden_errors[k] / std::sqrt(grad_sq_w[k]);
-          grad_sq_w[k] += hidden_errors[k] * hidden_errors[k];
+          float grad_w = hidden_errors[k] - static_cast<float>(regularization) * w_vec[k];
+          w_vec[k] += static_cast<float>(lr) * grad_w / std::sqrt(grad_sq_w[k]);
+          grad_sq_w[k] += grad_w * grad_w;
         }
       }
       
@@ -1123,18 +1131,19 @@ List sgns_from_fcm_cpp(
             hidden_errors[k] += base_grad * c_vec[k];
           }
           
-          // AdaGrad update for context vector
+          // AdaGrad update for context vector with L2 regularization
           for (int k = 0; k < n_dims; ++k) {
-            float grad_c = base_grad * w_vec[k];
+            float grad_c = base_grad * w_vec[k] - static_cast<float>(regularization) * c_vec[k];
             c_vec[k] += static_cast<float>(lr) * grad_c / std::sqrt(grad_sq_c[k]);
             grad_sq_c[k] += grad_c * grad_c;
           }
         }
         
-        // AdaGrad update for word vector
+        // AdaGrad update for word vector with L2 regularization
         for (int k = 0; k < n_dims; ++k) {
-          w_vec[k] += static_cast<float>(lr) * hidden_errors[k] / std::sqrt(grad_sq_w[k]);
-          grad_sq_w[k] += hidden_errors[k] * hidden_errors[k];
+          float grad_w = hidden_errors[k] - static_cast<float>(regularization) * w_vec[k];
+          w_vec[k] += static_cast<float>(lr) * grad_w / std::sqrt(grad_sq_w[k]);
+          grad_sq_w[k] += grad_w * grad_w;
         }
       }
       

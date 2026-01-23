@@ -21,6 +21,7 @@ train_sgns(x, ...)
   verbose = TRUE,
   threads = parallel::detectCores(),
   samples = NULL,
+  regularization = 0,
   ...
 )
 
@@ -47,6 +48,7 @@ train_sgns(x, ...)
   seed = NULL,
   verbose = TRUE,
   threads = parallel::detectCores(),
+  regularization = 0,
   ...
 )
 }
@@ -77,6 +79,9 @@ and vocabulary parameters. Required for \code{train_sgns.tokens}.}
 \item{samples}{integer. Number of context samples per target word in weighted
 sampling mode. Defaults to window size. Lower values speed up training with
 large windows at some cost to quality.}
+
+\item{regularization}{numeric. L2 regularization parameter (lambda). Default is 0
+(no regularization). Values around 1e-5 to 1e-4 are typical.}
 }
 \description{
 Train word and/or context embeddings using the Skip-Gram with Negative

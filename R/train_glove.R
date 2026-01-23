@@ -37,6 +37,8 @@
 #'   }
 #' @param shuffle logical. Whether to shuffle co-occurrence pairs each epoch.
 #'   Default is `TRUE`.
+#' @param regularization numeric. L2 regularization parameter (lambda). Default is 0
+#'   (no regularization). Values around 1e-5 to 1e-4 are typical.
 #' @param seed integer. Random seed for reproducibility.
 #' @param verbose logical. Print progress information.
 #' @param threads integer. Number of threads. Default uses all available cores.
@@ -84,6 +86,7 @@ train_glove <- function(
 	output = c("word_embeddings", "context_embeddings", "all"),
 	init = c("uniform", "normal"),
 	shuffle = TRUE,
+	regularization = 0,
 	seed = NULL,
 	verbose = TRUE,
 	threads = parallel::detectCores()
@@ -106,6 +109,7 @@ train_glove <- function(
 		"`epochs` must be a positive integer" = is.numeric(epochs) && epochs > 0,
 		"`fix_bias` must be logical" = is.logical(fix_bias),
 		"`shuffle` must be logical" = is.logical(shuffle),
+		"`regularization` must be a non-negative number" = is.numeric(regularization) && regularization >= 0,
 		"`verbose` must be logical" = is.logical(verbose),
 		"`threads` must be a positive integer" = is.numeric(threads) && threads > 0
 	)
@@ -125,7 +129,7 @@ train_glove <- function(
 		return(.train_glove_3d(
 			fcm, n_dims, x_max, alpha, lr, epochs, weight_fn, fix_bias,
 			include_word_embeddings, include_context_embeddings,
-			init, shuffle, seed, verbose, threads
+			init, shuffle, regularization, seed, verbose, threads
 		))
 	}
 	
@@ -181,7 +185,8 @@ train_glove <- function(
 		shuffle = shuffle,
 		threads = threads,
 		include_word_embeddings = include_word_embeddings,
-		include_context_embeddings = include_context_embeddings
+		include_context_embeddings = include_context_embeddings,
+		regularization = regularization
 	)
 	
 	# Add row names to embeddings
@@ -204,7 +209,7 @@ train_glove <- function(
 .train_glove_3d <- function(
 	fcm, n_dims, x_max, alpha, lr, epochs, weight_fn, fix_bias,
 	include_word_embeddings, include_context_embeddings,
-	init, shuffle, seed, verbose, threads
+	init, shuffle, regularization, seed, verbose, threads
 ) {
 	fcm_ids <- dimnames(fcm)[[3]]
 	
@@ -229,6 +234,7 @@ train_glove <- function(
 			output = output,
 			init = init,
 			shuffle = shuffle,
+			regularization = regularization,
 			seed = seed,
 			verbose = verbose && i == 1,  # Only verbose for first slice
 			threads = threads

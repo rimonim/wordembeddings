@@ -16,6 +16,7 @@ train_glove(
   output = c("word_embeddings", "context_embeddings", "all"),
   init = c("uniform", "normal"),
   shuffle = TRUE,
+  regularization = 0,
   seed = NULL,
   verbose = TRUE,
   threads = parallel::detectCores()
@@ -65,6 +66,9 @@ you want the bias terms to exactly capture marginal frequencies.}
 
 \item{shuffle}{logical. Whether to shuffle co-occurrence pairs each epoch.
 Default is \code{TRUE}.}
+
+\item{regularization}{numeric. L2 regularization parameter (lambda). Default is 0
+(no regularization). Values around 1e-5 to 1e-4 are typical.}
 
 \item{seed}{integer. Random seed for reproducibility.}
 

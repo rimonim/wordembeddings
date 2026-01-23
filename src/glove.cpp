@@ -32,6 +32,7 @@ public:
   T x_max;
   T learning_rate;
   T alpha;
+  T regularization;
   int weight_type;
   bool fix_bias;
   
@@ -50,12 +51,12 @@ public:
   std::vector<T> grad_sq_b_j;
   
   GloveFit(size_t vocab_size_, size_t word_vec_size_, T x_max_, T learning_rate_,
-           T alpha_, int weight_type_, bool fix_bias_,
+           T alpha_, T regularization_, int weight_type_, bool fix_bias_,
            const std::vector<T>& w_i_init, const std::vector<T>& w_j_init,
            const std::vector<T>& b_i_init, const std::vector<T>& b_j_init)
     : vocab_size(vocab_size_), word_vec_size(word_vec_size_),
       x_max(x_max_), learning_rate(learning_rate_), alpha(alpha_),
-      weight_type(weight_type_), fix_bias(fix_bias_),
+      regularization(regularization_), weight_type(weight_type_), fix_bias(fix_bias_),
       w_i(w_i_init), w_j(w_j_init), b_i(b_i_init), b_j(b_j_init) {
     
     // Initialize AdaGrad accumulators to 1.0
@@ -136,10 +137,10 @@ public:
       // grad = cost * other_vector (for embeddings)
       // grad = cost (for biases)
       
-      // Update word vectors
+      // Update word vectors with L2 regularization
       for (size_t k = 0; k < word_vec_size; ++k) {
-        T grad_w_i = cost * w_j_ptr[k];
-        T grad_w_j = cost * w_i_ptr[k];
+        T grad_w_i = cost * w_j_ptr[k] + regularization * w_i_ptr[k];
+        T grad_w_j = cost * w_i_ptr[k] + regularization * w_j_ptr[k];
         
         // AdaGrad update
         w_i_ptr[k] -= learning_rate * grad_w_i / std::sqrt(grad_sq_w_i_ptr[k]);
@@ -189,7 +190,8 @@ List glove_fit_cpp(
     const bool shuffle,
     const int threads,
     const bool include_word_embeddings,
-    const bool include_context_embeddings
+    const bool include_context_embeddings,
+    const double regularization          // L2 regularization parameter
 ) {
   
   int n_threads = threads;
@@ -250,7 +252,7 @@ List glove_fit_cpp(
   
   // Create GloVe fitter
   GloveFit<double> glove(
-    n_rows, n_dims, x_max, lr, alpha, weight_type, fix_bias,
+    n_rows, n_dims, x_max, lr, alpha, regularization, weight_type, fix_bias,
     w_i, w_j, b_i, b_j
   );
   

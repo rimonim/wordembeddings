@@ -18,6 +18,8 @@
 #' @param samples integer. Number of context samples per target word in weighted
 #'   sampling mode. Defaults to window size. Lower values speed up training with
 #'   large windows at some cost to quality.
+#' @param regularization numeric. L2 regularization parameter (lambda). Default is 0
+#'   (no regularization). Values around 1e-5 to 1e-4 are typical.
 #' @param ... Additional arguments passed to methods.
 #'
 #' @references
@@ -46,6 +48,7 @@ train_sgns.tokens <- function(
   verbose = TRUE,
   threads = parallel::detectCores(),
   samples = NULL,
+  regularization = 0,
   ...
 ) {
   
@@ -231,7 +234,8 @@ train_sgns.tokens <- function(
     init_type = init,
     seed = as.integer(seed),
     verbose = verbose,
-    threads = as.integer(threads)
+    threads = as.integer(threads),
+    regularization = regularization
   )
   
   # Add vocabulary as row names using the order returned from C++
@@ -276,6 +280,7 @@ train_sgns.fcm <- function(
   seed = NULL,
   verbose = TRUE,
   threads = parallel::detectCores(),
+  regularization = 0,
   ...
 ) {
   
@@ -306,7 +311,7 @@ train_sgns.fcm <- function(
   # Handle 3D arrays
   if (length(dim(fcm)) == 3) {
     return(.train_sgns_3d(
-      fcm, n_dims, neg, lr, epochs, init, seed, verbose, threads
+      fcm, n_dims, neg, lr, epochs, init, seed, verbose, threads, regularization
     ))
   }
 
@@ -341,7 +346,8 @@ train_sgns.fcm <- function(
     init_type = init,
     seed = as.integer(seed),
     verbose = verbose,
-    threads = threads
+    threads = threads,
+    regularization = regularization
   )
   
   # Add vocabulary as row names
@@ -353,7 +359,7 @@ train_sgns.fcm <- function(
 
 #' @keywords internal
 #' Handle 3D FCM arrays
-.train_sgns_3d <- function(fcm, n_dims, neg, lr, epochs, init, seed, verbose, threads) {
+.train_sgns_3d <- function(fcm, n_dims, neg, lr, epochs, init, seed, verbose, threads, regularization) {
   fcm_ids <- dimnames(fcm)[[3]]
   fcm_list <- lapply(seq_len(dim(fcm)[3]), function(i) {
     train_sgns.fcm(
@@ -365,7 +371,8 @@ train_sgns.fcm <- function(
       init = init,
       seed = seed,
       verbose = verbose,
-      threads = threads
+      threads = threads,
+      regularization = regularization
     )
   })
 
