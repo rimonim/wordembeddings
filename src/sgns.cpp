@@ -294,15 +294,25 @@ void sgns_streaming_worker(
       local_word_count++;
       
       if (use_fast_path) {
-        // Fast path: original word2vec with random window
-        next_random = next_random * 25214903917ULL + 11;
-        int actual_window = (next_random >> 16) % window;
+        // Fast path: sample n_samples context positions uniformly from window
+        // Build list of valid context positions
+        std::vector<int> valid_positions;
+        valid_positions.reserve(2 * window);
+        for (int offset = -window; offset <= window; ++offset) {
+          if (offset == 0) continue;
+          int c_pos = pos + offset;
+          if (c_pos >= 0 && c_pos < static_cast<int>(sentence.size())) {
+            valid_positions.push_back(c_pos);
+          }
+        }
         
-        for (int a = actual_window; a < window * 2 + 1 - actual_window; ++a) {
-          if (a == window) continue;
-          
-          int c_pos = pos - window + a;
-          if (c_pos < 0 || c_pos >= static_cast<int>(sentence.size())) continue;
+        if (valid_positions.empty()) continue;
+        
+        // Sample n_samples context positions (with replacement if needed)
+        for (int sample = 0; sample < n_samples; ++sample) {
+          next_random = next_random * 25214903917ULL + 11;
+          int selected_idx = (next_random >> 16) % valid_positions.size();
+          int c_pos = valid_positions[selected_idx];
           
           int context_idx = sentence[c_pos].vocab_idx;
           float* w_vec = word_emb + context_idx * n_dims;
